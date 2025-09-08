@@ -140,7 +140,6 @@
   function renderLeadTable(leads){
     const tbody = document.getElementById('leadBody');
     tbody.innerHTML = "";
-    const opts = vendorOptionsHTMLForState(r.lead_state);
 
     for(const r of leads){
       const opts = vendorOptionsHTMLForState(r.lead_state);
