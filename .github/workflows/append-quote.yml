@@ -1,4 +1,4 @@
-name: Upsert vendor quote (CSV only, robust)
+name: Upsert vendor quote (CSV only, with IST timestamp)
 
 on:
   issues:
@@ -44,7 +44,7 @@ jobs:
           cat /tmp/payload.csv
           echo "---------------------"
 
-      - name: Set up Python (for safe CSV upsert only)
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
@@ -54,13 +54,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas
 
-      - name: Upsert into output.csv
+      - name: Upsert into output.csv (adds submitted_date & submitted_time in IST)
         run: |
           python - << 'PY'
           import os, pandas as pd
           from datetime import datetime
           try:
-              from zoneinfo import ZoneInfo  # Py3.9+
+              from zoneinfo import ZoneInfo  # Python 3.9+
           except Exception:
               ZoneInfo = None
 
@@ -99,7 +99,7 @@ jobs:
           else:
               df = pd.DataFrame(columns=payload.columns)
 
-          # Ensure all payload columns exist in df (including the new timestamp cols)
+          # Ensure all payload columns exist in df (including timestamp cols)
           for c in payload.columns:
               if c not in df.columns:
                   df[c] = pd.NA
@@ -113,12 +113,12 @@ jobs:
                   mask &= (left == right)
               df = df.loc[~mask]
 
-          # Append the new row and write back
+          # Append new row and write back
           df = pd.concat([df, payload], ignore_index=True)
           df.to_csv("output.csv", index=False)
 
           # Log preview
-          print("---- output.csv (preview) ----")
+          print("---- output.csv (tail) ----")
           try:
               print(df.tail(5).to_string(index=False))
               print("... total rows:", len(df))
@@ -126,13 +126,12 @@ jobs:
               pass
           PY
 
-
       - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output.csv || true
-          git commit -m "Upsert quote into output.csv (via ${{ github.event_name }})" || echo "Nothing to commit"
+          git commit -m "Upsert quote into output.csv with IST timestamp (via ${{ github.event_name }})" || echo "Nothing to commit"
           git push
 
       - name: Comment & close issue (if triggered by issue)
@@ -143,6 +142,6 @@ jobs:
             const issue_number = context.payload.issue.number;
             await github.rest.issues.createComment({
               ...context.repo, issue_number,
-              body: "✅ Latest quote registered (upsert). `output.csv` updated. Closing this issue."
+              body: "✅ Latest quote registered (upsert). `output.csv` updated with `submitted_date` and `submitted_time` (IST). Closing this issue."
             });
             await github.rest.issues.update({ ...context.repo, issue_number, state: "closed" });
