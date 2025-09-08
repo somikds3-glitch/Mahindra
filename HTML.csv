@@ -1,0 +1,11 @@
+lead_id,lead_name,lead_address,lead_number,lead_city,lead_subcity,lead_state,lead_email,lead_ticket
+LD0001,Aarav Mehta,12 MG Road - DLF Phase 2,9876543210,Gurugram,DLF Phase 2,Haryana,aarav.mehta@example.com,Open
+LD0002,Shreya Nair,55 Linking Road - Khar West,9810011223,Mumbai,Khar West,Maharashtra,shreya.nair@example.com,Open
+LD0003,Ankit Verma,221B Park Street - Elgin,9830098300,Kolkata,Elgin,West Bengal,ankit.verma@example.com,Closed
+LD0004,Ishita Rao,88 Bannerghatta Main Rd - Arekere,9972001122,Bengaluru,Arekere,Karnataka,ishita.rao@example.com,Open
+LD0005,Rohan Kulkarni,3 FC Road - Deccan Gymkhana,9822003344,Pune,Deccan Gymkhana,Maharashtra,rohan.kulkarni@example.com,Open
+LD0006,Neha Singh,76 Hazratganj - MG Marg,9795007788,Lucknow,Hazratganj,Uttar Pradesh,neha.singh@example.com,Open
+LD0007,Farhan Ali,Plot 19 Banjara Hills - Rd No 12,9000123456,Hyderabad,Banjara Hills,Telangana,farhan.ali@example.com,Closed
+LD0008,Meera Iyer,32 Cathedral Road - Gopalapuram,9962005566,Chennai,Gopalapuram,Tamil Nadu,meera.iyer@example.com,Open
+LD0009,Devansh Patel,14 CG Road - Navrangpura,9898007788,Ahmedabad,Navrangpura,Gujarat,devansh.patel@example.com,Open
+LD0010,Pragya Sharma,5 Tonk Road - Lal Kothi,9829006677,Jaipur,Lal Kothi,Rajasthan,pragya.sharma@example.com,Open
