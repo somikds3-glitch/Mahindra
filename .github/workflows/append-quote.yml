@@ -1,4 +1,4 @@
-name: Upsert vendor quote (CSV + XLSX)
+name: Upsert vendor quote (CSV only)
 
 on:
   issues:
@@ -44,70 +44,43 @@ jobs:
           cat /tmp/payload.csv
           echo "---------------------"
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install deps
+      - name: Upsert into output.csv
         run: |
-          python -m pip install --upgrade pip
-          pip install pandas openpyxl
+          # Split header and row
+          HEADER="$(head -n1 /tmp/payload.csv)"
+          ROW="$(tail -n +2 /tmp/payload.csv)"
 
-      - name: Upsert into output.csv and rebuild output.xlsx
-        env:
-          # 🔑 Uniqueness key for overwrite behavior:
-          # Default: lead_id + vendor_id. For lead_id-only, change to: ["lead_id"]
-          UNIQUE_KEY_JSON: '["lead_id","vendor_id"]'
-        run: |
-          python - << 'PY'
-          import os, json, pandas as pd
+          # If file missing, create it with header + row
+          if [ ! -s output.csv ]; then
+            printf "%s\n" "$HEADER" > output.csv
+            printf "%s\n" "$ROW" >> output.csv
+          else
+            # If header mismatch, keep existing header but still append/replace row
+            EXISTING_HEADER="$(head -n1 output.csv)"
+            if [ "$EXISTING_HEADER" != "$HEADER" ]; then
+              echo "Header mismatch; using existing header."
+            fi
+            # Remove any existing row with same lead_id+vendor_id
+            KEY="$(echo "$ROW" | cut -d',' -f1,8)"   # lead_id (col1) + vendor_id (col8)
+            TMPFILE=$(mktemp)
+            { head -n1 output.csv; tail -n +2 output.csv | grep -v "^$(echo $KEY | sed 's/,/.*,/')"; } > "$TMPFILE"
+            mv "$TMPFILE" output.csv
+            # Append the new row
+            printf "%s\n" "$ROW" >> output.csv
+          fi
 
-          key_cols = json.loads(os.environ.get("UNIQUE_KEY_JSON", '["lead_id","vendor_id"]'))
-
-          # Read incoming payload (header + exactly one row)
-          payload = pd.read_csv("/tmp/payload.csv")
-          if payload.empty or payload.shape[0] != 1:
-              raise SystemExit("Payload must contain exactly one data row.")
-
-          # Load existing, or start fresh using payload header
-          if os.path.exists("output.csv"):
-              df = pd.read_csv("output.csv")
-              # Ensure all columns present
-              for c in payload.columns:
-                  if c not in df.columns:
-                      df[c] = pd.NA
-              # Reorder to existing columns first, then any new ones
-              df = df.reindex(columns=list(df.columns) + [c for c in payload.columns if c not in df.columns])
-          else:
-              df = pd.DataFrame(columns=payload.columns)
-
-          # Upsert: drop any existing rows matching the key, then append the new row
-          def row_key(s): return tuple(s[k] if k in s else None for k in key_cols)
-          payload_key = row_key(payload.iloc[0])
-
-          if all(k in df.columns for k in key_cols) and not df.empty:
-              mask = pd.Series([row_key(r) == payload_key for _, r in df.iterrows()], index=df.index)
-              df = df.loc[~mask]
-
-          df = pd.concat([df, payload], ignore_index=True)
-
-          # Persist CSV
-          df.to_csv("output.csv", index=False)
-
-          # Build XLSX
-          preferred = ["lead_id","lead_name","lead_address","lead_city","lead_subcity","lead_state","lead_ticket",
-                       "vendor_id","vendor_name","vendor_quote","vendor_subcity","vendor_city","vendor_address","note"]
-          cols = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
-          df[cols].to_excel("output.xlsx", index=False)
-          PY
+          echo "---- output.csv (after update) ----"
+          head -n5 output.csv
+          echo "..."
+          tail -n5 output.csv
+          echo "-----------------------------------"
 
       - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add output.csv output.xlsx || true
-          git commit -m "Upsert quote and rebuild output.xlsx (via ${{ github.event_name }})" || echo "Nothing to commit"
+          git add output.csv || true
+          git commit -m "Upsert quote into output.csv (via ${{ github.event_name }})" || echo "Nothing to commit"
           git push
 
       - name: Comment & close issue (if triggered by issue)
@@ -118,7 +91,6 @@ jobs:
             const issue_number = context.payload.issue.number;
             await github.rest.issues.createComment({
               ...context.repo, issue_number,
-              body: "✅ Latest quote registered (upsert). `output.csv` and `output.xlsx` updated. Closing this issue."
+              body: "✅ Latest quote registered (upsert). `output.csv` updated. Closing this issue."
             });
             await github.rest.issues.update({ ...context.repo, issue_number, state: "closed" });
-
