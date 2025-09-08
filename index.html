@@ -143,6 +143,7 @@
     const opts = vendorOptionsHTMLForState(r.lead_state);
 
     for(const r of leads){
+      const opts = vendorOptionsHTMLForState(r.lead_state);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${escapeHTML(r.lead_id)}</strong></td>
