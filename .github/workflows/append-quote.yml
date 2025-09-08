@@ -1,4 +1,4 @@
-name: Upsert vendor quote (CSV only)
+name: Upsert vendor quote (CSV only, robust)
 
 on:
   issues:
@@ -44,36 +44,69 @@ jobs:
           cat /tmp/payload.csv
           echo "---------------------"
 
+      - name: Set up Python (for safe CSV upsert only)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
       - name: Upsert into output.csv
         run: |
-          # Split header and row
-          HEADER="$(head -n1 /tmp/payload.csv)"
-          ROW="$(tail -n +2 /tmp/payload.csv)"
+          python - << 'PY'
+          import os, pandas as pd
 
-          # If file missing, create it with header + row
-          if [ ! -s output.csv ]; then
-            printf "%s\n" "$HEADER" > output.csv
-            printf "%s\n" "$ROW" >> output.csv
-          else
-            # If header mismatch, keep existing header but still append/replace row
-            EXISTING_HEADER="$(head -n1 output.csv)"
-            if [ "$EXISTING_HEADER" != "$HEADER" ]; then
-              echo "Header mismatch; using existing header."
-            fi
-            # Remove any existing row with same lead_id+vendor_id
-            KEY="$(echo "$ROW" | cut -d',' -f1,8)"   # lead_id (col1) + vendor_id (col8)
-            TMPFILE=$(mktemp)
-            { head -n1 output.csv; tail -n +2 output.csv | grep -v "^$(echo $KEY | sed 's/,/.*,/')"; } > "$TMPFILE"
-            mv "$TMPFILE" output.csv
-            # Append the new row
-            printf "%s\n" "$ROW" >> output.csv
-          fi
+          payload_path = "/tmp/payload.csv"
+          if not os.path.exists(payload_path):
+              raise SystemExit("No payload.csv found")
 
-          echo "---- output.csv (after update) ----"
-          head -n5 output.csv
-          echo "..."
-          tail -n5 output.csv
-          echo "-----------------------------------"
+          # Read incoming row (header + exactly one row)
+          try:
+              payload = pd.read_csv(payload_path)
+          except Exception as e:
+              raise SystemExit(f"Failed to read payload.csv: {e}")
+          if payload.empty or payload.shape[0] != 1:
+              raise SystemExit("Payload must contain exactly one data row.")
+
+          # Keys for overwrite behavior: (lead_id, vendor_id)
+          key_cols = ["lead_id","vendor_id"]
+          for k in key_cols:
+              if k not in payload.columns:
+                  raise SystemExit(f"Missing key column in payload: {k}")
+
+          # Load existing output.csv if present, else start fresh
+          if os.path.exists("output.csv") and os.path.getsize("output.csv") > 0:
+              try:
+                  df = pd.read_csv("output.csv")
+              except pd.errors.EmptyDataError:
+                  df = pd.DataFrame(columns=payload.columns)
+          else:
+              df = pd.DataFrame(columns=payload.columns)
+
+          # Ensure all payload columns exist in df
+          for c in payload.columns:
+              if c not in df.columns:
+                  df[c] = pd.NA
+
+          # Drop any existing row with same (lead_id, vendor_id)
+          if not df.empty:
+              mask = pd.Series(True, index=df.index)
+              for k in key_cols:
+                  mask &= (df[k].astype(str).fillna("") == payload.iloc[0][k].astype(str))
+              df = df.loc[~mask]
+
+          # Append the new row and write back
+          df = pd.concat([df, payload], ignore_index=True)
+          # Keep columns: existing order first, then any new ones
+          ordered_cols = list(df.columns)
+          df.to_csv("output.csv", index=False)
+
+          # Log preview
+          print("---- output.csv (preview) ----")
+          try:
+              print(df.head().to_string(index=False))
+              print("... total rows:", len(df))
+          except Exception:
+              pass
+          PY
 
       - name: Commit changes
         run: |
