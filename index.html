@@ -126,13 +126,16 @@
 
   function escapeHTML(s){ return (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-  function vendorOptionsHTML(){
-    return vendors.map(v => {
-      const label = `${v.vendor_name} (${v.vendor_subcity || v.vendor_city || ""})`;
-      const val = JSON.stringify(v);
-      return `<option value='${val.replaceAll("'", "&apos;")}'>${escapeHTML(label)}</option>`;
-    }).join("");
-  }
+  function vendorOptionsHTMLForState(state){
+  const list = vendors.filter(v => (v.vendor_state||"").toLowerCase() === (state||"").toLowerCase());
+  if (!list.length) return `<option value="">No vendors in ${escapeHTML(state || "this state")}</option>`;
+  return list.map(v => {
+    const label = `${v.vendor_name} (${v.vendor_subcity || v.vendor_city || ""})`;
+    const val = JSON.stringify(v);
+    return `<option value='${val.replaceAll("'", "&apos;")}'>${escapeHTML(label)}</option>`;
+  }).join("");
+}
+
 
   function renderLeadTable(leads){
     const tbody = document.getElementById('leadBody');
