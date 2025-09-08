@@ -41,7 +41,7 @@
 <body>
   <header>
     <div class="title"><span class="dot"></span> Leads (Open) & Vendor Quotes</div>
-    <div class="sub">Reads <code>HTML.CSV</code> & <code>vendor.csv</code> from repo root. Submits to <code>output.csv</code> via GitHub Issue + Action.</div>
+    <div class="sub">Reads <code>HTML.csv</code> & <code>vendor.csv</code> from repo root. Submits to <code>output.csv</code> via GitHub Issue + Action.</div>
   </header>
 
   <div class="wrap panel">
@@ -71,7 +71,7 @@
           <li>This opens a prefilled GitHub Issue.</li>
           <li>A workflow appends the row to <code>output.csv</code> and auto-closes the issue.</li>
         </ol>
-        <div class="hint">Files needed: <code>HTML.CSV</code>, <code>vendor.csv</code> (root). Workflow in <code>.github/workflows/</code>.</div>
+        <div class="hint">Files needed: <code>HTML.csv</code>, <code>vendor.csv</code> (root). Workflow in <code>.github/workflows/</code>.</div>
         <div id="lastSubmit" class="hint" style="margin-top:12px"></div>
       </div>
     </div>
@@ -79,7 +79,7 @@
 
   <script>
   const CONFIG = {
-    LEADS_CSV: "HTML.CSV",
+    LEADS_CSV: "HTML.csv",
     VENDORS_CSV: "vendor.csv",
     // 🔧 replace with your repo path:
     GITHUB_ISSUE_URL: "https://github.com/somikds3-glitch/Mahindra/issues/new?title=Vendor%20Quote&body="
