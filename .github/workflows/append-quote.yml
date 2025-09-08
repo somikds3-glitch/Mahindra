@@ -54,10 +54,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas
 
-      - name: Upsert into output.csv
+            - name: Upsert into output.csv
         run: |
           python - << 'PY'
           import os, pandas as pd
+          from datetime import datetime
+          try:
+              from zoneinfo import ZoneInfo  # Py3.9+
+          except Exception:
+              ZoneInfo = None
 
           payload_path = "/tmp/payload.csv"
           if not os.path.exists(payload_path):
@@ -70,6 +75,14 @@ jobs:
               raise SystemExit(f"Failed to read payload.csv: {e}")
           if payload.empty or payload.shape[0] != 1:
               raise SystemExit("Payload must contain exactly one data row.")
+
+          # 🔔 Add IST timestamp columns
+          if ZoneInfo:
+              now = datetime.now(ZoneInfo("Asia/Kolkata"))
+          else:
+              now = datetime.utcnow()  # fallback to UTC if zoneinfo unavailable
+          payload["submitted_date"] = now.strftime("%Y-%m-%d")
+          payload["submitted_time"] = now.strftime("%H:%M:%S")
 
           # Keys for overwrite behavior: (lead_id, vendor_id)
           key_cols = ["lead_id","vendor_id"]
@@ -86,7 +99,7 @@ jobs:
           else:
               df = pd.DataFrame(columns=payload.columns)
 
-          # Ensure all payload columns exist in df
+          # Ensure all payload columns exist in df (including the new timestamp cols)
           for c in payload.columns:
               if c not in df.columns:
                   df[c] = pd.NA
@@ -112,6 +125,7 @@ jobs:
           except Exception:
               pass
           PY
+
 
       - name: Commit changes
         run: |
