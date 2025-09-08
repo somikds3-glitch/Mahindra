@@ -126,15 +126,16 @@
 
   function escapeHTML(s){ return (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-  function vendorOptionsHTMLForState(state){
-  const list = vendors.filter(v => (v.vendor_state||"").toLowerCase() === (state||"").toLowerCase());
-  if (!list.length) return `<option value="">No vendors in ${escapeHTML(state || "this state")}</option>`;
+  function vendorOptionsHTMLForCity(city){
+  const list = vendors.filter(v => (v.vendor_city||"").toLowerCase() === (city||"").toLowerCase());
+  if (!list.length) return `<option value="">No vendors in ${escapeHTML(city || "this city")}</option>`;
   return list.map(v => {
-    const label = `${v.vendor_name} (${v.vendor_subcity || v.vendor_city || ""})`;
+    const label = `${v.vendor_name} (${v.vendor_subcity || ""})`;
     const val = JSON.stringify(v);
     return `<option value='${val.replaceAll("'", "&apos;")}'>${escapeHTML(label)}</option>`;
   }).join("");
 }
+
 
 
   function renderLeadTable(leads){
@@ -142,7 +143,7 @@
     tbody.innerHTML = "";
 
     for(const r of leads){
-      const opts = vendorOptionsHTMLForState(r.lead_state);
+      const opts = vendorOptionsHTMLForCity(r.lead_city);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${escapeHTML(r.lead_id)}</strong></td>
