@@ -54,7 +54,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas
 
-            - name: Upsert into output.csv
+      - name: Upsert into output.csv
         run: |
           python - << 'PY'
           import os, pandas as pd
