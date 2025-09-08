@@ -49,6 +49,23 @@
     .hint{ font-size:12px; color:var(--muted); margin-top:8px }
     .status{ font-size:13px; color:var(--muted); padding:8px 16px }
     .spacer{ flex:1 }
+
+    /* Fixed-width vendor dropdown (desktop), responsive on mobile */
+.vendorSel{
+  width: 260px;
+  min-width: 260px;
+  max-width: 260px;
+}
+.quote-row{
+  grid-template-columns: 260px 1fr 1fr auto; /* match the fixed select width */
+}
+
+/* Small screens: let it go full width */
+@media (max-width: 600px){
+  .quote-row{ grid-template-columns: 1fr; }
+  .vendorSel{ width: 100%; min-width: 0; max-width: none; }
+}
+
   </style>
 </head>
 <body>
