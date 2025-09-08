@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Leads & Vendor Quotes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{ --bg:#0b0f19; --card:#11182a; --ink:#e8efff; --muted:#9bb0d8; --accent:#5ea0ff; --accent-2:#7affbc; --ring: rgba(94,160,255,0.35); --radius:14px; }
+    *{box-sizing:border-box}
+    body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #18213a 20%, transparent 60%),
+                  radial-gradient(900px 500px at 110% 10%, #102036 10%, transparent 60%), var(--bg);
+      color:var(--ink); min-height:100dvh; }
+    header{ padding:32px 24px 8px; max-width:1200px; margin:0 auto; }
+    .title{ font-size: clamp(22px, 3vw, 34px); font-weight:700; display:flex; align-items:center; gap:12px; }
+    .title .dot{width:10px;height:10px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 20px var(--accent-2)}
+    .sub{color:var(--muted); margin-top:6px}
+    .wrap{max-width:1200px; margin:16px auto 48px; padding:0 24px}
+    .panel{ background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      border:1px solid rgba(255,255,255,0.08); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,0.3);}
+    .grid{ display:grid; gap:14px; grid-template-columns: 1.2fr 0.8fr; } @media (max-width:900px){ .grid{grid-template-columns:1fr} }
+    .card{ padding:18px; border-radius:var(--radius); background:var(--card); border:1px solid rgba(255,255,255,0.06)}
+    .toolbar{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:16px; border-bottom:1px solid rgba(255,255,255,0.08); }
+    input, select, button, textarea{ background:#0f1526; color:var(--ink); border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px 12px; outline:none; }
+    input:focus, select:focus, textarea:focus{ border-color: var(--accent); box-shadow: 0 0 0 4px var(--ring); }
+    button{ background: linear-gradient(180deg, var(--accent), #3b77c7); border:none; font-weight:600; cursor:pointer; }
+    button.secondary{ background:#0f1526; border:1px solid rgba(255,255,255,0.14) }
+    table{ width:100%; border-collapse:separate; border-spacing:0 8px; }
+    thead th{ text-align:left; font-size:13px; color:var(--muted); padding:10px 12px; }
+    tbody tr{ background:var(--card); border:1px solid rgba(255,255,255,0.06); }
+    tbody td{ padding:12px; border-top:1px solid rgba(255,255,255,0.06); border-bottom:1px solid rgba(255,255,255,0.06); }
+    tbody tr td:first-child{ border-left:1px solid rgba(255,255,255,0.06); border-radius:10px 0 0 10px}
+    tbody tr td:last-child{ border-right:1px solid rgba(255,255,255,0.06); border-radius:0 10px 10px 0}
+    .pill{ font-size:12px; padding:4px 8px; border-radius:999px; background:#0f1526; border:1px solid rgba(255,255,255,0.12); color:var(--muted)}
+    .right{ text-align:right }
+    .quote-row{ display:grid; grid-template-columns: 1fr 1fr 1fr auto; gap:10px; margin-top:8px; }
+    .hint{ font-size:12px; color:var(--muted); margin-top:8px }
+    .status{ font-size:13px; color:var(--muted); padding:8px 16px }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title"><span class="dot"></span> Leads (Open) & Vendor Quotes</div>
+    <div class="sub">Reads <code>HTML.csv</code> & <code>vendor.csv</code> from repo root. Submits to <code>output.csv</code> via GitHub Issue + Action.</div>
+  </header>
+
+  <div class="wrap panel">
+    <div class="toolbar">
+      <span class="pill">Mode: <strong>B (GitHub Issue)</strong></span>
+      <button class="secondary" id="reloadBtn">Reload CSVs</button>
+      <div class="status" id="status">Ready.</div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <table id="leadTable">
+          <thead>
+            <tr>
+              <th>Lead ID</th><th>Name</th><th>Address</th><th>City</th>
+              <th>Subcity</th><th>State</th><th>Ticket</th><th class="right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="leadBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 6px">How it works</h3>
+        <ol style="margin:8px 0 10px 18px; color:var(--muted); line-height:1.5">
+          <li>Pick a vendor from <code>vendor.csv</code>, enter a <strong>vendor_quote</strong>, click <em>Submit</em>.</li>
+          <li>This opens a prefilled GitHub Issue.</li>
+          <li>A workflow appends the row to <code>output.csv</code> and auto-closes the issue.</li>
+        </ol>
+        <div class="hint">Files needed: <code>HTML.csv</code>, <code>vendor.csv</code> (root). Workflow in <code>.github/workflows/</code>.</div>
+        <div id="lastSubmit" class="hint" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  const CONFIG = {
+    LEADS_CSV: "HTML.csv",
+    VENDORS_CSV: "vendor.csv",
+    // 🔧 replace with your repo path:
+    GITHUB_ISSUE_URL: "https://github.com/somikds3-glitch/Mahindra/issues/new?title=Vendor%20Quote&body="
+  };
+
+  const statusBox = document.getElementById('status');
+  const lastSubmit = document.getElementById('lastSubmit');
+  document.getElementById('reloadBtn').addEventListener('click', () => init());
+  const setStatus = (msg) => statusBox.textContent = msg;
+
+  function parseCSV(text){
+    const lines = text.trim().split(/\r?\n/);
+    const headers = lines.shift().split(',').map(h=>h.trim());
+    const rows = lines.filter(Boolean).map(line => {
+      const cols = line.split(',').map(c=>c.trim());
+      const obj = {}; headers.forEach((h,i)=> obj[h] = cols[i] ?? "");
+      return obj;
+    });
+    return { headers, rows };
+  }
+
+  async function fetchCSV(path){
+    const res = await fetch(path + "?_ts=" + Date.now());
+    if (!res.ok) throw new Error("Failed to fetch " + path);
+    const text = await res.text();
+    return parseCSV(text);
+  }
+
+  let vendors = [];
+
+  async function init(){
+    try{
+      setStatus("Loading CSVs…");
+      const [leadCSV, vendorCSV] = await Promise.all([
+        fetchCSV(CONFIG.LEADS_CSV),
+        fetchCSV(CONFIG.VENDORS_CSV)
+      ]);
+      vendors = vendorCSV.rows; // vendor_id,vendor_name,vendor_subcity,vendor_city,vendor_address
+      const openLeads = leadCSV.rows.filter(r => (r.lead_ticket||"").toLowerCase() === "open");
+      renderLeadTable(openLeads);
+      setStatus(`Loaded ${openLeads.length} open leads, ${vendors.length} vendors.`);
+    }catch(err){ console.error(err); setStatus("Error: " + err.message); }
+  }
+
+  function escapeHTML(s){ return (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+  function vendorOptionsHTMLForCity(city){
+  const list = vendors.filter(v => (v.vendor_city||"").toLowerCase() === (city||"").toLowerCase());
+  if (!list.length) return `<option value="">No vendors in ${escapeHTML(city || "this city")}</option>`;
+  return list.map(v => {
+    const label = `${v.vendor_name} (${v.vendor_subcity || ""})`;
+    const val = JSON.stringify(v);
+    return `<option value='${val.replaceAll("'", "&apos;")}'>${escapeHTML(label)}</option>`;
+  }).join("");
+}
+
+
+
+  function renderLeadTable(leads){
+    const tbody = document.getElementById('leadBody');
+    tbody.innerHTML = "";
+
+    for(const r of leads){
+      const opts = vendorOptionsHTMLForCity(r.lead_city);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${escapeHTML(r.lead_id)}</strong></td>
+        <td>${escapeHTML(r.lead_name)}</td>
+        <td>${escapeHTML(r.lead_address)}</td>
+        <td>${escapeHTML(r.lead_city)}</td>
+        <td>${escapeHTML(r.lead_subcity)}</td>
+        <td>${escapeHTML(r.lead_state)}</td>
+        <td><span class="pill">${escapeHTML(r.lead_ticket)}</span></td>
+        <td class="right">
+          <div class="quote-row">
+            <select class="vendorSel">
+              <option value="">Select vendor…</option>
+              ${opts}
+            </select>
+            <input type="number" class="vendorQuote" placeholder="Vendor quote (₹)" min="0" step="0.01" />
+            <input type="text" class="note" placeholder="Optional note" />
+            <button class="submitBtn">Submit</button>
+          </div>
+          <div class="hint">We store: vendor_id, vendor_name, vendor_subcity, vendor_city, vendor_address + quote.</div>
+        </td>
+      `;
+      tr.querySelector('.submitBtn').addEventListener('click', () => handleSubmit(r, tr));
+      tbody.appendChild(tr);
+    }
+  }
+
+  function submitIssue(out){
+    const csvHeader = "lead_id,lead_name,lead_address,lead_city,lead_subcity,lead_state,lead_ticket,vendor_id,vendor_name,vendor_quote,vendor_subcity,vendor_city,vendor_address,note";
+    const csvRow = [
+      out.lead_id,out.lead_name,out.lead_address,out.lead_city,out.lead_subcity,out.lead_state,out.lead_ticket,
+      out.vendor_id,out.vendor_name,out.vendor_quote,out.vendor_subcity,out.vendor_city,out.vendor_address,out.note
+    ].map(x => (x ?? "").toString().replaceAll('"','""')).map(x => `"${x}"`).join(",");
+
+    const body = encodeURIComponent(
+`Please append the following row to output.csv
+
+\`\`\`csv
+${csvHeader}
+${csvRow}
+\`\`\`
+
+Meta:
+- Submitted at: ${new Date().toISOString()}
+- Source: GitHub Pages form`
+    );
+    window.open(CONFIG.GITHUB_ISSUE_URL + body, "_blank");
+    document.getElementById('lastSubmit').textContent = `Opened GitHub Issue @ ${new Date().toLocaleString()}`;
+  }
+
+  function handleSubmit(lead, rowEl){
+    const sel = rowEl.querySelector('.vendorSel');
+    const qEl = rowEl.querySelector('.vendorQuote');
+    const note = rowEl.querySelector('.note').value.trim();
+    const vendorVal = sel.value;
+    const quote = qEl.value.trim();
+
+    if (!vendorVal){ alert("Select a vendor"); return; }
+    if (!quote || isNaN(+quote)){ alert("Enter a numeric vendor quote"); return; }
+
+    const v = JSON.parse(vendorVal);
+    const out = {
+      lead_id: lead.lead_id, lead_name: lead.lead_name, lead_address: lead.lead_address,
+      lead_city: lead.lead_city, lead_subcity: lead.lead_subcity, lead_state: lead.lead_state,
+      lead_ticket: lead.lead_ticket,
+      vendor_id: v.vendor_id, vendor_name: v.vendor_name, vendor_quote: quote,
+      vendor_subcity: v.vendor_subcity, vendor_city: v.vendor_city, vendor_address: v.vendor_address,
+      note
+    };
+
+    submitIssue(out);
+    rowEl.querySelector('.vendorQuote').value = "";
+    rowEl.querySelector('.note').value = "";
+    rowEl.querySelector('.vendorSel').selectedIndex = 0;
+  }
+
+  init();
+  </script>
+</body>
+</html>
