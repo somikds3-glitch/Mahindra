@@ -1,0 +1,72 @@
+name: Append vendor quote to output.csv
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  append:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Extract CSV block from issue body
+        id: extract
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || "";
+            const m = body.match(/```csv\s*([\s\S]*?)```/i);
+            if (!m) core.setFailed("No CSV code block found in issue body.");
+            const csv = m[1].trim();
+            core.setOutput("csv", csv);
+
+      - name: Append to output.csv (create if missing)
+        id: append
+        run: |
+          CSV_CONTENT="${{ steps.extract.outputs.csv }}"
+          if [ -z "$CSV_CONTENT" ]; then
+            echo "No CSV found"; exit 1
+          fi
+          HEADER=$(printf "%s\n" "$CSV_CONTENT" | head -n1)
+          ROW=$(printf "%s\n" "$CSV_CONTENT" | tail -n +2)
+
+          if [ ! -f output.csv ]; then
+            printf "%s\n" "$HEADER" > output.csv
+          else
+            EXISTING_HEADER=$(head -n1 output.csv)
+            if [ "$EXISTING_HEADER" != "$HEADER" ]; then
+              echo "Header mismatch; using existing header and appending row."
+            fi
+          fi
+
+          printf "%s\n" "$ROW" >> output.csv
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output.csv
+          git commit -m "Append vendor quote from issue #${{ github.event.issue.number }}" || echo "Nothing to commit"
+          git push
+
+      - name: Comment & close issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue_number = context.payload.issue.number;
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number,
+              body: "✅ Appended to `output.csv`. Closing this issue."
+            });
+            await github.rest.issues.update({
+              ...context.repo,
+              issue_number,
+              state: "closed"
+            });
