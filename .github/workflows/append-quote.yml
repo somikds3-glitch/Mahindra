@@ -94,12 +94,15 @@ jobs:
               if c not in df.columns:
                   df[c] = pd.NA
 
-          # Drop any existing row with same (lead_id, vendor_id)
-          if not df.empty:
-              mask = pd.Series(True, index=df.index)
-              for k in key_cols:
-                  mask &= (df[k].astype(str).fillna("") == payload.iloc[0][k].astype(str))
-              df = df.loc[~mask]
+# Drop any existing row with same (lead_id, vendor_id)
+if not df.empty:
+    mask = pd.Series(True, index=df.index)
+    for k in key_cols:
+        left  = df[k].astype(str).fillna("")
+        right = str(payload.iloc[0][k])
+        mask &= (left == right)
+    df = df.loc[~mask]
+
 
           # Append the new row and write back
           df = pd.concat([df, payload], ignore_index=True)
