@@ -1,4 +1,4 @@
-name: Upsert vendor quote (CSV only, with IST timestamp)
+name: Upsert vendor quote (CSV only, with IST timestamp before note)
 
 on:
   issues:
@@ -54,7 +54,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas
 
-      - name: Upsert into output.csv (adds submitted_date & submitted_time in IST)
+      - name: Upsert into output.csv (adds submitted_date & submitted_time before note)
         run: |
           python - << 'PY'
           import os, pandas as pd
@@ -80,7 +80,7 @@ jobs:
           if ZoneInfo:
               now = datetime.now(ZoneInfo("Asia/Kolkata"))
           else:
-              now = datetime.utcnow()  # fallback to UTC if zoneinfo unavailable
+              now = datetime.utcnow()
           payload["submitted_date"] = now.strftime("%Y-%m-%d")
           payload["submitted_time"] = now.strftime("%H:%M:%S")
 
@@ -99,7 +99,7 @@ jobs:
           else:
               df = pd.DataFrame(columns=payload.columns)
 
-          # Ensure all payload columns exist in df (including timestamp cols)
+          # Ensure all payload columns exist in df
           for c in payload.columns:
               if c not in df.columns:
                   df[c] = pd.NA
@@ -113,8 +113,22 @@ jobs:
                   mask &= (left == right)
               df = df.loc[~mask]
 
-          # Append new row and write back
+          # Append new row
           df = pd.concat([df, payload], ignore_index=True)
+
+          # 🔧 Reorder columns: place submitted_date + submitted_time before note
+          cols = list(df.columns)
+          if "note" in cols:
+              before_note = [c for c in cols if c != "note" and c not in ("submitted_date","submitted_time")]
+              if "submitted_date" in cols: before_note.append("submitted_date")
+              if "submitted_time" in cols: before_note.append("submitted_time")
+              before_note.append("note")
+              ordered_cols = before_note
+          else:
+              ordered_cols = cols
+          df = df[ordered_cols]
+
+          # Save back to CSV
           df.to_csv("output.csv", index=False)
 
           # Log preview
@@ -131,7 +145,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output.csv || true
-          git commit -m "Upsert quote into output.csv with IST timestamp (via ${{ github.event_name }})" || echo "Nothing to commit"
+          git commit -m "Upsert quote into output.csv with IST timestamp (before note)" || echo "Nothing to commit"
           git push
 
       - name: Comment & close issue (if triggered by issue)
@@ -142,6 +156,6 @@ jobs:
             const issue_number = context.payload.issue.number;
             await github.rest.issues.createComment({
               ...context.repo, issue_number,
-              body: "✅ Latest quote registered (upsert). `output.csv` updated with `submitted_date` and `submitted_time` (IST). Closing this issue."
+              body: "✅ Latest quote registered. `output.csv` updated with `submitted_date` and `submitted_time` (before note). Closing this issue."
             });
             await github.rest.issues.update({ ...context.repo, issue_number, state: "closed" });
