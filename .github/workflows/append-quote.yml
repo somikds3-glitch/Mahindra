@@ -1,8 +1,14 @@
-name: Append vendor quote to output.csv
+name: Append vendor quote to output.csv and build output.xlsx
 
 on:
   issues:
     types: [opened]
+  # Optional: manual test trigger
+  workflow_dispatch:
+    inputs:
+      csv_payload:
+        description: 'CSV block (header + one row)'
+        required: false
 
 permissions:
   contents: write
@@ -15,58 +21,90 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Extract CSV block from issue body
+      - name: Extract CSV block from issue body or manual input (base64)
         id: extract
         uses: actions/github-script@v7
         with:
           script: |
-            const body = context.payload.issue.body || "";
+            // 1) If manual input provided, use that
+            const manual = core.getInput('csv_payload');
+            if (manual && manual.trim()) {
+              core.setOutput('csv_b64', Buffer.from(manual.trim(), 'utf8').toString('base64'));
+              return;
+            }
+            // 2) Else parse first ```csv ... ``` block from issue body
+            const body = context.payload.issue?.body || "";
             const m = body.match(/```csv\s*([\s\S]*?)```/i);
             if (!m) core.setFailed("No CSV code block found in issue body.");
             const csv = m[1].trim();
-            core.setOutput("csv", csv);
+            core.setOutput('csv_b64', Buffer.from(csv, 'utf8').toString('base64'));
+
+      - name: Write payload to temp file
+        run: |
+          printf "%s" "${{ steps.extract.outputs.csv_b64 }}" | base64 -d > /tmp/payload.csv
+          # Normalize CRLF just in case
+          sed -i 's/\r$//' /tmp/payload.csv
+          echo "---- payload.csv ----"
+          cat /tmp/payload.csv
+          echo "---------------------"
 
       - name: Append to output.csv (create if missing)
-        id: append
         run: |
-          CSV_CONTENT="${{ steps.extract.outputs.csv }}"
-          if [ -z "$CSV_CONTENT" ]; then
-            echo "No CSV found"; exit 1
-          fi
-          HEADER=$(printf "%s\n" "$CSV_CONTENT" | head -n1)
-          ROW=$(printf "%s\n" "$CSV_CONTENT" | tail -n +2)
+          HEADER="$(head -n1 /tmp/payload.csv)"
+          ROW="$(tail -n +2 /tmp/payload.csv)"
 
           if [ ! -f output.csv ]; then
             printf "%s\n" "$HEADER" > output.csv
           else
-            EXISTING_HEADER=$(head -n1 output.csv)
+            EXISTING_HEADER="$(head -n1 output.csv)"
             if [ "$EXISTING_HEADER" != "$HEADER" ]; then
-              echo "Header mismatch; using existing header and appending row."
+              echo "Header mismatch; keeping existing header and appending row."
             fi
           fi
 
+          # Append the row (quoted CSV line)
           printf "%s\n" "$ROW" >> output.csv
 
-      - name: Commit changes
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas openpyxl
+
+      - name: Build output.xlsx from output.csv
+        run: |
+          python - << 'PY'
+          import pandas as pd, os
+          if not os.path.exists("output.csv"):
+              raise SystemExit("output.csv not found")
+          df = pd.read_csv("output.csv")
+          # Column order (only the ones that exist)
+          cols = ["lead_id","lead_name","lead_address","lead_city","lead_subcity","lead_state","lead_ticket",
+                  "vendor_id","vendor_name","vendor_quote","vendor_subcity","vendor_city","vendor_address","note"]
+          df = df[[c for c in cols if c in df.columns]]
+          df.to_excel("output.xlsx", index=False)
+          PY
+
+      - name: Commit changes (CSV + XLSX)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add output.csv
-          git commit -m "Append vendor quote from issue #${{ github.event.issue.number }}" || echo "Nothing to commit"
+          git add output.csv output.xlsx || true
+          git commit -m "Append quote and rebuild output.xlsx (issue #${{ github.event.issue.number || 'manual' }})" || echo "Nothing to commit"
           git push
 
-      - name: Comment & close issue
+      - name: Comment & close issue (if from issue)
+        if: ${{ github.event_name == 'issues' }}
         uses: actions/github-script@v7
         with:
           script: |
             const issue_number = context.payload.issue.number;
             await github.rest.issues.createComment({
-              ...context.repo,
-              issue_number,
-              body: "✅ Appended to `output.csv`. Closing this issue."
+              ...context.repo, issue_number,
+              body: "✅ Appended to `output.csv` and rebuilt `output.xlsx`. Closing this issue."
             });
-            await github.rest.issues.update({
-              ...context.repo,
-              issue_number,
-              state: "closed"
-            });
+            await github.rest.issues.update({ ...context.repo, issue_number, state: "closed" });
