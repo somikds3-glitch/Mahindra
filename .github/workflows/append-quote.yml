@@ -1,9 +1,8 @@
-name: Append vendor quote to output.csv and build output.xlsx
+name: Upsert vendor quote (CSV + XLSX)
 
 on:
   issues:
     types: [opened]
-  # Optional: manual test trigger
   workflow_dispatch:
     inputs:
       csv_payload:
@@ -15,24 +14,22 @@ permissions:
   issues: write
 
 jobs:
-  append:
+  upsert:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Extract CSV block from issue body or manual input (base64)
+      - name: Extract CSV block (base64-safe)
         id: extract
         uses: actions/github-script@v7
         with:
           script: |
-            // 1) If manual input provided, use that
             const manual = core.getInput('csv_payload');
             if (manual && manual.trim()) {
               core.setOutput('csv_b64', Buffer.from(manual.trim(), 'utf8').toString('base64'));
               return;
             }
-            // 2) Else parse first ```csv ... ``` block from issue body
             const body = context.payload.issue?.body || "";
             const m = body.match(/```csv\s*([\s\S]*?)```/i);
             if (!m) core.setFailed("No CSV code block found in issue body.");
@@ -42,28 +39,10 @@ jobs:
       - name: Write payload to temp file
         run: |
           printf "%s" "${{ steps.extract.outputs.csv_b64 }}" | base64 -d > /tmp/payload.csv
-          # Normalize CRLF just in case
           sed -i 's/\r$//' /tmp/payload.csv
           echo "---- payload.csv ----"
           cat /tmp/payload.csv
           echo "---------------------"
-
-      - name: Append to output.csv (create if missing)
-        run: |
-          HEADER="$(head -n1 /tmp/payload.csv)"
-          ROW="$(tail -n +2 /tmp/payload.csv)"
-
-          if [ ! -f output.csv ]; then
-            printf "%s\n" "$HEADER" > output.csv
-          else
-            EXISTING_HEADER="$(head -n1 output.csv)"
-            if [ "$EXISTING_HEADER" != "$HEADER" ]; then
-              echo "Header mismatch; keeping existing header and appending row."
-            fi
-          fi
-
-          # Append the row (quoted CSV line)
-          printf "%s\n" "$ROW" >> output.csv
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -75,29 +54,63 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas openpyxl
 
-      - name: Build output.xlsx from output.csv
+      - name: Upsert into output.csv and rebuild output.xlsx
+        env:
+          # 🔑 Uniqueness key for overwrite behavior:
+          # Default: lead_id + vendor_id. For lead_id-only, change to: ["lead_id"]
+          UNIQUE_KEY_JSON: '["lead_id","vendor_id"]'
         run: |
           python - << 'PY'
-          import pandas as pd, os
-          if not os.path.exists("output.csv"):
-              raise SystemExit("output.csv not found")
-          df = pd.read_csv("output.csv")
-          # Column order (only the ones that exist)
-          cols = ["lead_id","lead_name","lead_address","lead_city","lead_subcity","lead_state","lead_ticket",
-                  "vendor_id","vendor_name","vendor_quote","vendor_subcity","vendor_city","vendor_address","note"]
-          df = df[[c for c in cols if c in df.columns]]
-          df.to_excel("output.xlsx", index=False)
+          import os, json, pandas as pd
+
+          key_cols = json.loads(os.environ.get("UNIQUE_KEY_JSON", '["lead_id","vendor_id"]'))
+
+          # Read incoming payload (header + exactly one row)
+          payload = pd.read_csv("/tmp/payload.csv")
+          if payload.empty or payload.shape[0] != 1:
+              raise SystemExit("Payload must contain exactly one data row.")
+
+          # Load existing, or start fresh using payload header
+          if os.path.exists("output.csv"):
+              df = pd.read_csv("output.csv")
+              # Ensure all columns present
+              for c in payload.columns:
+                  if c not in df.columns:
+                      df[c] = pd.NA
+              # Reorder to existing columns first, then any new ones
+              df = df.reindex(columns=list(df.columns) + [c for c in payload.columns if c not in df.columns])
+          else:
+              df = pd.DataFrame(columns=payload.columns)
+
+          # Upsert: drop any existing rows matching the key, then append the new row
+          def row_key(s): return tuple(s[k] if k in s else None for k in key_cols)
+          payload_key = row_key(payload.iloc[0])
+
+          if all(k in df.columns for k in key_cols) and not df.empty:
+              mask = pd.Series([row_key(r) == payload_key for _, r in df.iterrows()], index=df.index)
+              df = df.loc[~mask]
+
+          df = pd.concat([df, payload], ignore_index=True)
+
+          # Persist CSV
+          df.to_csv("output.csv", index=False)
+
+          # Build XLSX
+          preferred = ["lead_id","lead_name","lead_address","lead_city","lead_subcity","lead_state","lead_ticket",
+                       "vendor_id","vendor_name","vendor_quote","vendor_subcity","vendor_city","vendor_address","note"]
+          cols = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
+          df[cols].to_excel("output.xlsx", index=False)
           PY
 
-      - name: Commit changes (CSV + XLSX)
+      - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output.csv output.xlsx || true
-          git commit -m "Append quote and rebuild output.xlsx (issue #${{ github.event.issue.number || 'manual' }})" || echo "Nothing to commit"
+          git commit -m "Upsert quote and rebuild output.xlsx (via ${{ github.event_name }})" || echo "Nothing to commit"
           git push
 
-      - name: Comment & close issue (if from issue)
+      - name: Comment & close issue (if triggered by issue)
         if: ${{ github.event_name == 'issues' }}
         uses: actions/github-script@v7
         with:
@@ -105,6 +118,7 @@ jobs:
             const issue_number = context.payload.issue.number;
             await github.rest.issues.createComment({
               ...context.repo, issue_number,
-              body: "✅ Appended to `output.csv` and rebuilt `output.xlsx`. Closing this issue."
+              body: "✅ Latest quote registered (upsert). `output.csv` and `output.xlsx` updated. Closing this issue."
             });
             await github.rest.issues.update({ ...context.repo, issue_number, state: "closed" });
+
