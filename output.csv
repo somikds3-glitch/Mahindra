@@ -1,8 +1,8 @@
 lead_id,lead_name,lead_address,lead_city,lead_subcity,lead_state,lead_ticket,vendor_id,vendor_name,vendor_quote,vendor_subcity,vendor_city,vendor_address,submitted_date,submitted_time,note
 LD0010,Pragya Sharma,5 Tonk Road - Lal Kothi,Jaipur,Lal Kothi,Rajasthan,Open,V010,Amber Suppliers,6545648.0,Bapu Nagar,Jaipur,3S Sahakar Marg,,,
-LD0009,Devansh Patel,14 CG Road - Navrangpura,Ahmedabad,Navrangpura,Gujarat,Open,V009,Navrang Enterprises,4500000.0,Navrangpura,Ahmedabad,27 University Road,,,
 LD0002,Shreya Nair,55 Linking Road - Khar West,Mumbai,Khar West,Maharashtra,Open,V002,Mumbai Infra Solutions,100000.0,Bandra West,Mumbai,101 Turner Road Bandra,,,
 LD0006,Neha Singh,76 Hazratganj - MG Marg,Lucknow,Hazratganj,Uttar Pradesh,Open,V006,Awadh Traders,50000.0,Aliganj,Lucknow,6 Sector Q Aliganj,2025-09-09,00:53:53,2019 model ford with less than 50000 km driven
 LD0001,Aarav Mehta,12 MG Road - DLF Phase 2,Gurugram,DLF Phase 2,Haryana,Open,V001,Shree BuildMart,200000.0,DLF Phase 3,Gurugram,47 Udyog Vihar Phase 4,2025-09-09,00:59:48,good conditioned Zen
 LD0004,Ishita Rao,88 Bannerghatta Main Rd - Arekere,Bengaluru,Arekere,Karnataka,Open,V004,SouthTech Services,1.0,JP Nagar,Bengaluru,212 JP Nagar 3rd Phase,2025-09-09,01:23:42,think about it? aur 12 baje se ek baje wala bana? arey bhai should filters have multi select option?
 LD0005,Rohan Kulkarni,3 FC Road - Deccan Gymkhana,Pune,Deccan Gymkhana,Maharashtra,Open,V005,Deccan Suppliers,150000.0,Shivajinagar,Pune,9 Jangali Maharaj Road,2025-09-09,01:30:38,2010 model Ford Figo- best price
+LD0009,Devansh Patel,14 CG Road - Navrangpura,Ahmedabad,Navrangpura,Gujarat,Open,V009,Navrang Enterprises,455.0,Navrangpura,Ahmedabad,27 University Road,2025-09-09,08:23:14,Hello
