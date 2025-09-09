@@ -45,27 +45,35 @@
     tbody tr td:last-child{ border-right:1px solid rgba(255,255,255,0.06); border-radius:0 10px 10px 0}
     .pill{ font-size:12px; padding:4px 8px; border-radius:999px; background:#0f1526; border:1px solid rgba(255,255,255,0.12); color:var(--muted)}
     .right{ text-align:right }
-    .quote-row{ display:grid; grid-template-columns: 1fr 1fr 1fr auto; gap:10px; margin-top:8px; }
+    .quote-row{ display:grid; grid-template-columns: 260px 1fr 1fr auto; gap:10px; margin-top:8px; }
     .hint{ font-size:12px; color:var(--muted); margin-top:8px }
     .status{ font-size:13px; color:var(--muted); padding:8px 16px }
     .spacer{ flex:1 }
 
     /* Fixed-width vendor dropdown (desktop), responsive on mobile */
-.vendorSel{
-  width: 260px;
-  min-width: 260px;
-  max-width: 260px;
-}
-.quote-row{
-  grid-template-columns: 260px 1fr 1fr auto; /* match the fixed select width */
-}
+    .vendorSel{
+      width: 260px;
+      min-width: 260px;
+      max-width: 260px;
+    }
+    @media (max-width: 600px){
+      .quote-row{ grid-template-columns: 1fr; }
+      .vendorSel{ width: 100%; min-width: 0; max-width: none; }
+    }
 
-/* Small screens: let it go full width */
-@media (max-width: 600px){
-  .quote-row{ grid-template-columns: 1fr; }
-  .vendorSel{ width: 100%; min-width: 0; max-width: none; }
-}
-
+    /* Maintenance overlay */
+    .maint-overlay{
+      position: fixed; inset: 0; z-index: 9999;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(5,8,15,0.85); backdrop-filter: blur(4px);
+    }
+    .maint-card{
+      background: var(--card); border:1px solid rgba(255,255,255,0.1);
+      border-radius: var(--radius); padding: 28px 24px; max-width: 560px; text-align:center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    .maint-title{ font-size: clamp(20px, 2.4vw, 28px); font-weight: 700; margin-bottom: 8px; }
+    .maint-sub{ color: var(--muted); font-size: 14px; }
   </style>
 </head>
 <body>
@@ -81,7 +89,7 @@
       <div class="status" id="status">Ready.</div>
       <div class="spacer"></div>
 
-      <!-- NEW: Filters -->
+      <!-- Filters -->
       <select id="stateFilter" class="secondary">
         <option value="">All states</option>
       </select>
@@ -114,6 +122,15 @@
         <div class="hint">Files needed: <code>HTML.csv</code>, <code>vendor.csv</code> (root). Workflow in <code>.github/workflows/</code>.</div>
         <div id="lastSubmit" class="hint" style="margin-top:12px"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- Maintenance overlay -->
+  <div id="maintOverlay" class="maint-overlay" aria-hidden="true">
+    <div class="maint-card">
+      <div class="maint-title">Current Under Maintenance</div>
+      <div class="maint-sub">We’re processing quotes between <strong>12:00–13:00 IST</strong>.<br/>
+        The site will be back online right after.</div>
     </div>
   </div>
 
@@ -156,8 +173,52 @@
     return parseCSV(text);
   }
 
+  // Maintenance helpers (IST)
+  function nowISTParts(){
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata', hour12: false,
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    }).formatToParts(new Date());
+    const get = k => +(parts.find(p => p.type===k)?.value || '0');
+    return { hour:get('hour'), minute:get('minute'), second:get('second') };
+  }
+  function isMaintenanceWindowIST(){
+    const {hour} = nowISTParts();
+    // Active from 12:00:00 to 12:59:59 IST
+    return hour === 12;
+  }
+  function showMaintenance(){
+    const el = document.getElementById('maintOverlay');
+    el.style.display = 'flex';
+    setStatus('Maintenance window active (12:00–13:00 IST).');
+  }
+  function hideMaintenance(){
+    const el = document.getElementById('maintOverlay');
+    el.style.display = 'none';
+  }
+  let maintTimer = null;
+  function startMaintenanceWatcher(){
+    if (maintTimer) clearInterval(maintTimer);
+    maintTimer = setInterval(() => {
+      if (!isMaintenanceWindowIST()){
+        hideMaintenance();
+        clearInterval(maintTimer); maintTimer = null;
+        init(); // resume normal load after 13:00 IST
+      }
+    }, 15000); // check every 15s
+  }
+
   async function init(){
     try{
+      // Maintenance gate
+      if (isMaintenanceWindowIST()){
+        showMaintenance();
+        startMaintenanceWatcher();
+        return; // skip loading during maintenance
+      }else{
+        hideMaintenance();
+      }
+
       setStatus("Loading CSVs…");
       const [leadCSV, vendorCSV] = await Promise.all([
         fetchCSV(CONFIG.LEADS_CSV),
@@ -171,7 +232,7 @@
       renderLeadTable(allOpenLeads);
       wireFilterEvents();
 
-      setStatus(`Loaded ${allOpenLeads.length} open leads, ${vendors.length} vendors.`);
+      setStatus(Loaded ${allOpenLeads.length} open leads, ${vendors.length} vendors.);
     }catch(err){ console.error(err); setStatus("Error: " + err.message); }
   }
 
@@ -180,19 +241,19 @@
   // Dropdowns for vendor list per row — match by CITY
   function vendorOptionsHTMLForCity(city){
     const list = vendors.filter(v => (v.vendor_city||"").toLowerCase() === (city||"").toLowerCase());
-    if (!list.length) return `<option value="">No vendors in ${escapeHTML(city || "this city")}</option>`;
+    if (!list.length) return <option value="">No vendors in ${escapeHTML(city || "this city")}</option>;
     return list.map(v => {
-      const label = `${v.vendor_name} (${v.vendor_subcity || ""})`;
+      const label = ${v.vendor_name} (${v.vendor_subcity || ""});
       const val = JSON.stringify(v);
-      return `<option value='${val.replaceAll("'", "&apos;")}'>${escapeHTML(label)}</option>`;
+      return <option title="${escapeHTML(label)}" value='${val.replaceAll("'", "&apos;")}'>${escapeHTML(label)}</option>;
     }).join("");
   }
 
   // ----- Filters: populate and apply -----
   function populateStateOptions(leads){
     const states = uniq(leads.map(l => (l.lead_state||"").trim()));
-    stateSel().innerHTML = `<option value="">All states</option>` +
-      states.map(s => `<option value="${escapeHTML(s)}">${escapeHTML(s)}</option>`).join("");
+    stateSel().innerHTML = <option value="">All states</option> +
+      states.map(s => <option value="${escapeHTML(s)}">${escapeHTML(s)}</option>).join("");
   }
 
   function populateCityOptions(leads, state){
@@ -201,8 +262,8 @@
         .filter(l => !state || (l.lead_state||"").toLowerCase() === state.toLowerCase())
         .map(l => (l.lead_city||"").trim())
     );
-    citySel().innerHTML = `<option value="">All cities</option>` +
-      cities.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
+    citySel().innerHTML = <option value="">All cities</option> +
+      cities.map(c => <option value="${escapeHTML(c)}">${escapeHTML(c)}</option>).join("");
   }
 
   function applyFilters(){
@@ -215,7 +276,7 @@
     );
 
     renderLeadTable(filtered);
-    setStatus(`Showing ${filtered.length} of ${allOpenLeads.length} open leads.`);
+    setStatus(Showing ${filtered.length} of ${allOpenLeads.length} open leads.);
   }
 
   function wireFilterEvents(){
@@ -273,22 +334,22 @@
     const csvRow = [
       out.lead_id,out.lead_name,out.lead_address,out.lead_city,out.lead_subcity,out.lead_state,out.lead_ticket,
       out.vendor_id,out.vendor_name,out.vendor_quote,out.vendor_subcity,out.vendor_city,out.vendor_address,out.note
-    ].map(x => (x ?? "").toString().replaceAll('"','""')).map(x => `"${x}"`).join(",");
+    ].map(x => (x ?? "").toString().replaceAll('"','""')).map(x => "${x}").join(",");
 
     const body = encodeURIComponent(
 `Please upsert the following row into output.csv
 
-\`\`\`csv
+\\\`csv
 ${csvHeader}
 ${csvRow}
-\`\`\`
+\\\`
 
 Meta:
 - Submitted at: ${new Date().toISOString()}
 - Source: GitHub Pages form`
     );
     window.open(CONFIG.GITHUB_ISSUE_URL + body, "_blank");
-    lastSubmit.textContent = `Opened GitHub Issue @ ${new Date().toLocaleString()}`;
+    lastSubmit.textContent = Opened GitHub Issue @ ${new Date().toLocaleString()};
   }
 
   function handleSubmit(lead, rowEl){
@@ -317,7 +378,7 @@ Meta:
     rowEl.querySelector('.vendorSel').selectedIndex = 0;
   }
 
-  // Go
+  // Start
   init();
   </script>
 </body>
