@@ -66,6 +66,20 @@ tbody tr td:last-child{ border-right:1px solid rgba(255,255,255,0.06); border-ra
   .vendorSel{ width: 100%; min-width: 0; max-width: none; }
 }
 
+/* Maintenance overlay */
+.maint-overlay{
+  position: fixed; inset: 0; z-index: 9999;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(5,8,15,0.85); backdrop-filter: blur(4px);
+}
+.maint-card{
+  background: var(--card); border:1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius); padding: 28px 24px; max-width: 560px; text-align:center;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+}
+.maint-title{ font-size: clamp(20px, 2.4vw, 28px); font-weight: 700; margin-bottom: 8px; }
+.maint-sub{ color: var(--muted); font-size: 14px; }
+
 </style>
 </head>
 <body>
@@ -158,6 +172,16 @@ return parseCSV(text);
 
 async function init(){
 try{
+
+// Maintenance check
+    if (isMaintenanceWindowIST()){
+      showMaintenance();
+      startMaintenanceWatcher();
+      return; // stop loading leads/vendors during maintenance
+    }else{
+      hideMaintenance();
+    }
+    
 setStatus("Loading CSVs…");
 const [leadCSV, vendorCSV] = await Promise.all([
 fetchCSV(CONFIG.LEADS_CSV),
@@ -176,6 +200,44 @@ setStatus(`Loaded ${allOpenLeads.length} open leads, ${vendors.length} vendors.`
 }
 
 function escapeHTML(s){ return (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+function nowISTParts(){
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata', hour12: false,
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  }).formatToParts(new Date());
+  const get = k => +(parts.find(p => p.type===k)?.value || '0');
+  return { hour:get('hour'), minute:get('minute'), second:get('second') };
+}
+
+function isMaintenanceWindowIST(){
+  const {hour} = nowISTParts();
+  // Active from 12:00:00 to 12:59:59 IST
+  return hour === 12;
+}
+
+function showMaintenance(){
+  const el = document.getElementById('maintOverlay');
+  el.style.display = 'flex';
+  setStatus('Maintenance window active (12:00–13:00 IST).');
+}
+
+function hideMaintenance(){
+  const el = document.getElementById('maintOverlay');
+  el.style.display = 'none';
+}
+
+let maintTimer = null;
+function startMaintenanceWatcher(){
+  if (maintTimer) clearInterval(maintTimer);
+  maintTimer = setInterval(() => {
+    if (!isMaintenanceWindowIST()){
+      hideMaintenance();
+      clearInterval(maintTimer); maintTimer = null;
+      init(); // resume normal load after 13:00
+    }
+  }, 15000); // check every 15s
+}
 
 // Dropdowns for vendor list per row — match by CITY
 function vendorOptionsHTMLForCity(city){
@@ -320,5 +382,14 @@ rowEl.querySelector('.vendorSel').selectedIndex = 0;
 // Go
 init();
 </script>
+
+<div id="maintOverlay" class="maint-overlay" aria-hidden="true">
+  <div class="maint-card">
+    <div class="maint-title">Current Under Maintenance</div>
+    <div class="maint-sub">We’re processing quotes between <strong>12:00–13:00 IST</strong>.<br/>
+      The site will be back online right after.</div>
+  </div>
+</div>
+    
 </body>
 </html>
