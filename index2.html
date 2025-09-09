@@ -171,32 +171,35 @@ return parseCSV(text);
 }
 
 async function init(){
-try{
-
-// Maintenance check
+  try{
+    // 🔔 Maintenance gate: show overlay & stop normal load between 12:00–12:59 IST
     if (isMaintenanceWindowIST()){
       showMaintenance();
       startMaintenanceWatcher();
-      return; // stop loading leads/vendors during maintenance
+      return; // stop here during maintenance hour
     }else{
       hideMaintenance();
     }
-    
-setStatus("Loading CSVs…");
-const [leadCSV, vendorCSV] = await Promise.all([
-fetchCSV(CONFIG.LEADS_CSV),
-fetchCSV(CONFIG.VENDORS_CSV)
-]);
-vendors = vendorCSV.rows; // vendor_id,vendor_name,vendor_subcity,vendor_city,vendor_address
-allOpenLeads = leadCSV.rows.filter(r => (r.lead_ticket||"").toLowerCase() === "open");
 
-populateStateOptions(allOpenLeads);
-populateCityOptions(allOpenLeads, "");
-renderLeadTable(allOpenLeads);
-wireFilterEvents();
+    // If not in maintenance → continue as before
+    setStatus("Loading CSVs…");
+    const [leadCSV, vendorCSV] = await Promise.all([
+      fetchCSV(CONFIG.LEADS_CSV),
+      fetchCSV(CONFIG.VENDORS_CSV)
+    ]);
+    vendors = vendorCSV.rows;
+    allOpenLeads = leadCSV.rows.filter(r => (r.lead_ticket||"").toLowerCase() === "open");
 
-setStatus(`Loaded ${allOpenLeads.length} open leads, ${vendors.length} vendors.`);
-}catch(err){ console.error(err); setStatus("Error: " + err.message); }
+    populateStateOptions(allOpenLeads);
+    populateCityOptions(allOpenLeads, "");
+    renderLeadTable(allOpenLeads);
+    wireFilterEvents();
+
+    setStatus(Loaded ${allOpenLeads.length} open leads, ${vendors.length} vendors.);
+  }catch(err){
+    console.error(err);
+    setStatus("Error: " + err.message);
+  }
 }
 
 function escapeHTML(s){ return (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
