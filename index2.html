@@ -1,10 +1,11 @@
 <script>
+document.addEventListener("DOMContentLoaded", () => {
   /* === CONFIG === */
   const CONFIG = {
     LEADS_CSV: "HTML.csv",
     VENDORS_CSV: "vendor.csv",
     GITHUB_API_URL: "https://api.github.com/repos/somikds3-glitch/Mahindra/issues",
-    // ⚠️ Replace this with a secure solution in real deployment
+    // ⚠️ Replace this with a secure backend relay in production
     GITHUB_PAT: "ghp_yourFineGrainedTokenHere"
   };
 
@@ -225,6 +226,7 @@
     qEl.value = ""; rowEl.querySelector('.note').value = ""; sel.selectedIndex = 0;
   }
 
-  // Go
+  // Start once DOM ready
   init();
+});
 </script>
