@@ -1,242 +1,230 @@
-<script>
-document.addEventListener("DOMContentLoaded", () => {
-  /* === CONFIG === */
-  const CONFIG = {
-    LEADS_CSV: "HTML.csv",
-    VENDORS_CSV: "vendor.csv",
-    GITHUB_API_URL: "https://api.github.com/repos/somikds3-glitch/Mahindra/issues",
-    // ⚠️ Don’t leave this in production frontend
-    GITHUB_PAT: "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"
-  };
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Leads & Vendor Quotes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  const statusBox   = document.getElementById('status');
-  const lastSubmit  = document.getElementById('lastSubmit');
-  const emptyState  = document.getElementById('emptyState');
-  const errorState  = document.getElementById('errorState');
-  const toastEl     = document.getElementById('toast');
-
-  const setStatus = (msg) => { if (statusBox) statusBox.textContent = msg; };
-
-  /* Globals */
-  let vendors = [];
-  let allOpenLeads = [];
-
-  const stateSel = () => document.getElementById('stateFilter');
-  const citySel  = () => document.getElementById('cityFilter');
-  const uniq     = arr => [...new Set(arr.filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-
-  /* Utilities */
-  function showToast(msg){
-    if (!toastEl) return;
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    setTimeout(()=> toastEl.classList.remove('show'), 2600);
-  }
-  function escapeHTML(s){ return (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-
-  /* CSV helpers */
-  function parseCSV(text){
-    const lines   = text.trim().split(/\r?\n/);
-    const headers = (lines.shift() || '').split(',').map(h=>h.trim());
-    const rows    = lines.filter(Boolean).map(line => {
-      const cols = line.split(',').map(c=>c.trim());
-      const obj = {}; headers.forEach((h,i)=> obj[h] = cols[i] ?? "");
-      return obj;
-    });
-    return { headers, rows };
-  }
-  async function fetchCSV(path){
-    const res = await fetch(`${path}?_ts=${Date.now()}`);
-    if (!res.ok) throw new Error(`Failed to fetch ${path}`);
-    const text = await res.text();
-    return parseCSV(text);
-  }
-
-  /* Init */
-  async function init(){
-    try{
-      setStatus("Loading CSVs…");
-      if (emptyState) emptyState.style.display = "none";
-      if (errorState) errorState.style.display = "none";
-
-      const [leadCSV, vendorCSV] = await Promise.all([
-        fetchCSV(CONFIG.LEADS_CSV),
-        fetchCSV(CONFIG.VENDORS_CSV)
-      ]);
-
-      vendors = vendorCSV.rows;
-      allOpenLeads = leadCSV.rows.filter(r => (r.lead_ticket||"").toLowerCase() === "open");
-
-      populateStateOptions(allOpenLeads);
-      populateCityOptions(allOpenLeads, "");
-      applyFilters();
-
-      setStatus(`Loaded ${allOpenLeads.length} open leads, ${vendors.length} vendors.`);
-      showToast("Data refreshed.");
-    }catch(err){
-      console.error(err);
-      setStatus("Error loading data.");
-      if (errorState) errorState.style.display = "block";
+  <style>
+    :root {
+      --bg: #0c111c;
+      --panel: #0f1626;
+      --ink: #e7eefc;
+      --muted: #9bb0d8;
+      --accent: #5ea0ff;
+      --accent-2: #63f5b8;
+      --ring: rgba(94,160,255,.35);
+      --radius: 14px;
+      --shadow: 0 10px 30px rgba(0,0,0,.32);
+      --border: rgba(255,255,255,.08);
+      --border-soft: rgba(255,255,255,.06);
+      --grid-gap: 16px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     }
-  }
 
-  /* Filters UI */
-  function populateStateOptions(leads){
-    if (!stateSel()) return;
-    const states = uniq(leads.map(l => (l.lead_state||"").trim()));
-    stateSel().innerHTML = `<option value="">All states</option>` +
-      states.map(s => `<option value="${escapeHTML(s)}">${escapeHTML(s)}</option>`).join("");
-  }
-  function populateCityOptions(leads, state){
-    if (!citySel()) return;
-    const cities = uniq(
-      leads
-        .filter(l => !state || (l.lead_state||"").toLowerCase() === state.toLowerCase())
-        .map(l => (l.lead_city||"").trim())
-    );
-    citySel().innerHTML = `<option value="">All cities</option>` +
-      cities.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
-  }
-
-  function applyFilters(){
-    if (!stateSel() || !citySel()) return;
-    const s = (stateSel().value || "").toLowerCase();
-    const c = (citySel().value  || "").toLowerCase();
-
-    const filtered = allOpenLeads.filter(l =>
-      (!s || (l.lead_state||"").toLowerCase() === s) &&
-      (!c || (l.lead_city ||"").toLowerCase() === c)
-    );
-
-    renderLeadTable(filtered);
-    setStatus(`Showing ${filtered.length} of ${allOpenLeads.length} open leads.`);
-    if (emptyState) emptyState.style.display = filtered.length ? "none" : "block";
-  }
-
-  if (stateSel()) stateSel().addEventListener('change', () => {
-    populateCityOptions(allOpenLeads, stateSel().value);
-    if (citySel()) citySel().value = "";
-    applyFilters();
-  });
-  if (citySel()) citySel().addEventListener('change', applyFilters);
-  const clearBtn = document.getElementById('clearFilters');
-  if (clearBtn) clearBtn.addEventListener('click', () => {
-    if (stateSel()) stateSel().value = "";
-    populateCityOptions(allOpenLeads, "");
-    if (citySel()) citySel().value = "";
-    applyFilters();
-  });
-  const reloadBtn = document.getElementById('reloadBtn');
-  if (reloadBtn) reloadBtn.addEventListener('click', () => init());
-
-  /* Table render */
-  function vendorOptionsHTMLForCity(city){
-    const list = vendors.filter(v => (v.vendor_city||"").toLowerCase() === (city||"").toLowerCase());
-    if (!list.length) return `<option value="">No vendors in ${escapeHTML(city || "this city")}</option>`;
-    return list.map(v => {
-      const label = `${v.vendor_name} ${v.vendor_subcity ? `(${v.vendor_subcity})` : ""}`;
-      const val   = JSON.stringify(v);
-      return `<option value='${val.replaceAll("'", "&apos;")}'>${escapeHTML(label)}</option>`;
-    }).join("");
-  }
-
-  function renderLeadTable(leads){
-    const tbody = document.getElementById('leadBody');
-    if (!tbody) return;
-    tbody.innerHTML = "";
-
-    for(const r of leads){
-      const opts = vendorOptionsHTMLForCity(r.lead_city);
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><strong>${escapeHTML(r.lead_id)}</strong></td>
-        <td>${escapeHTML(r.lead_name)}</td>
-        <td>${escapeHTML(r.lead_address)}</td>
-        <td>${escapeHTML(r.lead_city)}</td>
-        <td>${escapeHTML(r.lead_subcity)}</td>
-        <td>${escapeHTML(r.lead_state)}</td>
-        <td><span class="pill">${escapeHTML(r.lead_ticket)}</span></td>
-        <td class="right">
-          <div class="quote-row">
-            <select class="vendorSel" aria-label="Select vendor">
-              <option value="">Select vendor…</option>
-              ${opts}
-            </select>
-            <input type="number" class="vendorQuote" placeholder="Vendor quote (₹)" inputmode="decimal" min="0" step="0.01" />
-            <input type="text" class="note" placeholder="Optional note" maxlength="160" />
-            <button class="submitBtn">Submit</button>
-          </div>
-          <div class="hint">We store: vendor_id, vendor_name, vendor_subcity, vendor_city, vendor_address + quote.</div>
-        </td>
-      `;
-      tr.querySelector('.submitBtn').addEventListener('click', () => handleSubmit(r, tr));
-      tbody.appendChild(tr);
+    body {
+      margin: 0;
+      font-family: var(--font);
+      color: var(--ink);
+      background: var(--bg);
     }
-  }
 
-  /* Submission → GitHub API (with fallback) */
-  async function submitIssue(out){
-    const csvHeader = "lead_id,lead_name,lead_address,lead_city,lead_subcity,lead_state,lead_ticket,vendor_id,vendor_name,vendor_quote,vendor_subcity,vendor_city,vendor_address,note";
-    const csvRow = [
-      out.lead_id,out.lead_name,out.lead_address,out.lead_city,out.lead_subcity,out.lead_state,out.lead_ticket,
-      out.vendor_id,out.vendor_name,out.vendor_quote,out.vendor_subcity,out.vendor_city,out.vendor_address,out.note
-    ]
-    .map(x => (x ?? "").toString().replaceAll('"','""'))
-    .map(x => `"${x}"`).join(",");
+    header { padding: 20px; }
+    .title { font-size: 24px; font-weight: bold; }
+    .wrap { max-width: 1200px; margin: 20px auto; padding: 20px; }
+    .panel {
+      background: var(--panel);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
 
-    const issue = {
-      title: "Vendor Quote",
-      body: `Please upsert the following row into output.csv\n\n\`\`\`csv\n${csvHeader}\n${csvRow}\n\`\`\`\n\nMeta:\n- Submitted at: ${new Date().toISOString()}\n- Source: GitHub Pages form`
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 10px; border: 1px solid var(--border-soft); }
+
+    .pill { padding: 2px 8px; border-radius: 8px; background: #222; }
+    .toast {
+      position: fixed; right: 16px; bottom: 16px;
+      background: var(--panel); padding: 10px 14px; border-radius: 8px;
+      border: 1px solid var(--border); display: none;
+    }
+    .toast.show { display: block; }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="title">Leads (Open) & Vendor Quotes</div>
+    <div id="status">Ready.</div>
+    <button id="reloadBtn">Reload CSVs</button>
+    <button id="clearFilters">Clear</button>
+    <select id="stateFilter"><option value="">All states</option></select>
+    <select id="cityFilter"><option value="">All cities</option></select>
+  </header>
+
+  <div class="wrap panel">
+    <div id="emptyState" style="display:none;">No leads match your filters.</div>
+    <div id="errorState" style="display:none;">Could not load CSVs.</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Lead ID</th><th>Name</th><th>Address</th><th>City</th>
+          <th>Subcity</th><th>State</th><th>Ticket</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="leadBody"></tbody>
+    </table>
+    <div id="lastSubmit"></div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const CONFIG = {
+      LEADS_CSV: "HTML.csv",
+      VENDORS_CSV: "vendor.csv",
+      GITHUB_API_URL: "https://api.github.com/repos/somikds3-glitch/Mahindra/issues",
+      GITHUB_PAT: "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" // ⚠️ Don’t keep real tokens in frontend
     };
 
-    try {
-      const res = await fetch(CONFIG.GITHUB_API_URL, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${CONFIG.GITHUB_PAT}`,
-          "Accept": "application/vnd.github+json"
-        },
-        body: JSON.stringify(issue)
+    const statusBox   = document.getElementById('status');
+    const lastSubmit  = document.getElementById('lastSubmit');
+    const emptyState  = document.getElementById('emptyState');
+    const errorState  = document.getElementById('errorState');
+    const toastEl     = document.getElementById('toast');
+
+    let vendors = [];
+    let allOpenLeads = [];
+
+    function showToast(msg){
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      setTimeout(()=> toastEl.classList.remove('show'), 2500);
+    }
+
+    function escapeHTML(s){ return (s||"").replace(/[&<>"']/g,
+      m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+    function parseCSV(text){
+      const lines   = text.trim().split(/\r?\n/);
+      const headers = (lines.shift() || '').split(',').map(h=>h.trim());
+      const rows    = lines.map(line => {
+        const cols = line.split(',').map(c=>c.trim());
+        const obj = {}; headers.forEach((h,i)=> obj[h] = cols[i] ?? "");
+        return obj;
       });
-
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      if (lastSubmit) lastSubmit.textContent = `Created GitHub Issue #${data.number} at ${new Date().toLocaleString()}`;
-      showToast("Issue created successfully!");
-    } catch (err) {
-      console.error("API failed, falling back:", err);
-      // fallback to opening issue manually
-      const body = encodeURIComponent(issue.body);
-      window.open(CONFIG.GITHUB_API_URL.replace("/repos/", "/") + "/new?title=" + encodeURIComponent(issue.title) + "&body=" + body, "_blank");
-      showToast("Fallback: Opened GitHub issue in new tab.");
+      return { headers, rows };
     }
-  }
+    async function fetchCSV(path){
+      const res = await fetch(`${path}?_ts=${Date.now()}`);
+      if (!res.ok) throw new Error(`Failed to fetch ${path}`);
+      return parseCSV(await res.text());
+    }
 
-  function handleSubmit(lead, rowEl){
-    const sel   = rowEl.querySelector('.vendorSel');
-    const qEl   = rowEl.querySelector('.vendorQuote');
-    const note  = rowEl.querySelector('.note').value.trim();
-    const vVal  = sel.value;
-    const quote = qEl.value.trim();
+    async function init(){
+      try {
+        statusBox.textContent = "Loading…";
+        emptyState.style.display = "none";
+        errorState.style.display = "none";
 
-    if (!vVal){ showToast("Select a vendor"); sel.focus(); return; }
-    if (!quote || isNaN(+quote)){ showToast("Enter a numeric vendor quote"); qEl.focus(); return; }
+        const [leadCSV, vendorCSV] = await Promise.all([
+          fetchCSV(CONFIG.LEADS_CSV),
+          fetchCSV(CONFIG.VENDORS_CSV)
+        ]);
 
-    const v = JSON.parse(vVal);
-    const out = {
-      lead_id: lead.lead_id, lead_name: lead.lead_name, lead_address: lead.lead_address,
-      lead_city: lead.lead_city, lead_subcity: lead.lead_subcity, lead_state: lead.lead_state,
-      lead_ticket: lead.lead_ticket,
-      vendor_id: v.vendor_id, vendor_name: v.vendor_name, vendor_quote: quote,
-      vendor_subcity: v.vendor_subcity, vendor_city: v.vendor_city, vendor_address: v.vendor_address,
-      note
-    };
+        vendors = vendorCSV.rows;
+        allOpenLeads = leadCSV.rows.filter(r => (r.lead_ticket||"").toLowerCase() === "open");
+        renderLeadTable(allOpenLeads);
 
-    submitIssue(out);
-    qEl.value = ""; rowEl.querySelector('.note').value = ""; sel.selectedIndex = 0;
-  }
+        statusBox.textContent = `Loaded ${allOpenLeads.length} open leads.`;
+      } catch (err) {
+        console.error(err);
+        statusBox.textContent = "Error loading data.";
+        errorState.style.display = "block";
+      }
+    }
 
-  // Start
-  init();
-});
-</script>
+    function renderLeadTable(leads){
+      const tbody = document.getElementById('leadBody');
+      tbody.innerHTML = "";
+      if (!leads.length) {
+        emptyState.style.display = "block";
+        return;
+      }
+      for(const r of leads){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${escapeHTML(r.lead_id)}</td>
+          <td>${escapeHTML(r.lead_name)}</td>
+          <td>${escapeHTML(r.lead_address)}</td>
+          <td>${escapeHTML(r.lead_city)}</td>
+          <td>${escapeHTML(r.lead_subcity)}</td>
+          <td>${escapeHTML(r.lead_state)}</td>
+          <td><span class="pill">${escapeHTML(r.lead_ticket)}</span></td>
+          <td>
+            <input type="number" class="vendorQuote" placeholder="Quote (₹)" />
+            <button class="submitBtn">Submit</button>
+          </td>`;
+        tr.querySelector('.submitBtn').addEventListener('click', () => handleSubmit(r, tr));
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function submitIssue(out){
+      const csvHeader = "lead_id,lead_name,lead_address,lead_city,lead_subcity,lead_state,lead_ticket,note";
+      const csvRow = [
+        out.lead_id,out.lead_name,out.lead_address,out.lead_city,
+        out.lead_subcity,out.lead_state,out.lead_ticket,out.note
+      ].map(x => `"${(x ?? "").toString().replaceAll('"','""')}"`).join(",");
+
+      const issue = {
+        title: "Vendor Quote",
+        body: `Please upsert this row:\n\n\`\`\`csv\n${csvHeader}\n${csvRow}\n\`\`\`\n`
+      };
+
+      try {
+        const res = await fetch(CONFIG.GITHUB_API_URL, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${CONFIG.GITHUB_PAT}`,
+            "Accept": "application/vnd.github+json"
+          },
+          body: JSON.stringify(issue)
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        lastSubmit.textContent = `Created GitHub Issue #${data.number}`;
+        showToast("Issue created successfully!");
+      } catch (err) {
+        console.error("API failed, fallback:", err);
+        window.open("https://github.com/somikds3-glitch/Mahindra/issues/new?title=" +
+          encodeURIComponent(issue.title) + "&body=" + encodeURIComponent(issue.body), "_blank");
+        showToast("Fallback: opened GitHub issue page.");
+      }
+    }
+
+    function handleSubmit(lead, rowEl){
+      const qEl = rowEl.querySelector('.vendorQuote');
+      const quote = qEl.value.trim();
+      if (!quote) { showToast("Enter a quote"); return; }
+
+      const out = {
+        lead_id: lead.lead_id, lead_name: lead.lead_name, lead_address: lead.lead_address,
+        lead_city: lead.lead_city, lead_subcity: lead.lead_subcity, lead_state: lead.lead_state,
+        lead_ticket: lead.lead_ticket, note: quote
+      };
+      submitIssue(out);
+      qEl.value = "";
+    }
+
+    // Bind buttons
+    const reloadBtn = document.getElementById('reloadBtn');
+    if (reloadBtn) reloadBtn.addEventListener('click', init);
+    const clearBtn = document.getElementById('clearFilters');
+    if (clearBtn) clearBtn.addEventListener('click', () => renderLeadTable(allOpenLeads));
+
+    init();
+  });
+  </script>
+</body>
+</html>
