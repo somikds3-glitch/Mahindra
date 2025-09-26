@@ -15,10 +15,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const errorState  = document.getElementById('errorState');
   const toastEl     = document.getElementById('toast');
 
+  // safe: element is guaranteed to exist now
   document.getElementById('reloadBtn').addEventListener('click', () => init());
   const setStatus = (msg) => statusBox.textContent = msg;
 
-  /* Globals for filtering */
+  /* Globals */
   let vendors = [];
   let allOpenLeads = [];
 
@@ -226,7 +227,7 @@ document.addEventListener("DOMContentLoaded", () => {
     qEl.value = ""; rowEl.querySelector('.note').value = ""; sel.selectedIndex = 0;
   }
 
-  // Start once DOM ready
+  // Kick off once DOM ready
   init();
 });
 </script>
