@@ -5,7 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
     LEADS_CSV: "HTML.csv",
     VENDORS_CSV: "vendor.csv",
     GITHUB_API_URL: "https://api.github.com/repos/somikds3-glitch/Mahindra/issues",
-    // ⚠️ Replace this with a secure backend relay in production
+    // ⚠️ Don’t leave this in production frontend
     GITHUB_PAT: "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"
   };
 
@@ -15,9 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const errorState  = document.getElementById('errorState');
   const toastEl     = document.getElementById('toast');
 
-  // safe: element is guaranteed to exist now
-  document.getElementById('reloadBtn').addEventListener('click', () => init());
-  const setStatus = (msg) => statusBox.textContent = msg;
+  const setStatus = (msg) => { if (statusBox) statusBox.textContent = msg; };
 
   /* Globals */
   let vendors = [];
@@ -29,6 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* Utilities */
   function showToast(msg){
+    if (!toastEl) return;
     toastEl.textContent = msg;
     toastEl.classList.add('show');
     setTimeout(()=> toastEl.classList.remove('show'), 2600);
@@ -57,8 +56,8 @@ document.addEventListener("DOMContentLoaded", () => {
   async function init(){
     try{
       setStatus("Loading CSVs…");
-      emptyState.style.display = "none";
-      errorState.style.display = "none";
+      if (emptyState) emptyState.style.display = "none";
+      if (errorState) errorState.style.display = "none";
 
       const [leadCSV, vendorCSV] = await Promise.all([
         fetchCSV(CONFIG.LEADS_CSV),
@@ -77,17 +76,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }catch(err){
       console.error(err);
       setStatus("Error loading data.");
-      errorState.style.display = "block";
+      if (errorState) errorState.style.display = "block";
     }
   }
 
   /* Filters UI */
   function populateStateOptions(leads){
+    if (!stateSel()) return;
     const states = uniq(leads.map(l => (l.lead_state||"").trim()));
     stateSel().innerHTML = `<option value="">All states</option>` +
       states.map(s => `<option value="${escapeHTML(s)}">${escapeHTML(s)}</option>`).join("");
   }
   function populateCityOptions(leads, state){
+    if (!citySel()) return;
     const cities = uniq(
       leads
         .filter(l => !state || (l.lead_state||"").toLowerCase() === state.toLowerCase())
@@ -98,6 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function applyFilters(){
+    if (!stateSel() || !citySel()) return;
     const s = (stateSel().value || "").toLowerCase();
     const c = (citySel().value  || "").toLowerCase();
 
@@ -108,21 +110,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
     renderLeadTable(filtered);
     setStatus(`Showing ${filtered.length} of ${allOpenLeads.length} open leads.`);
-    emptyState.style.display = filtered.length ? "none" : "block";
+    if (emptyState) emptyState.style.display = filtered.length ? "none" : "block";
   }
 
-  stateSel().addEventListener('change', () => {
+  if (stateSel()) stateSel().addEventListener('change', () => {
     populateCityOptions(allOpenLeads, stateSel().value);
-    citySel().value = "";
+    if (citySel()) citySel().value = "";
     applyFilters();
   });
-  citySel().addEventListener('change', applyFilters);
-  document.getElementById('clearFilters').addEventListener('click', () => {
-    stateSel().value = "";
+  if (citySel()) citySel().addEventListener('change', applyFilters);
+  const clearBtn = document.getElementById('clearFilters');
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    if (stateSel()) stateSel().value = "";
     populateCityOptions(allOpenLeads, "");
-    citySel().value = "";
+    if (citySel()) citySel().value = "";
     applyFilters();
   });
+  const reloadBtn = document.getElementById('reloadBtn');
+  if (reloadBtn) reloadBtn.addEventListener('click', () => init());
 
   /* Table render */
   function vendorOptionsHTMLForCity(city){
@@ -137,6 +142,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderLeadTable(leads){
     const tbody = document.getElementById('leadBody');
+    if (!tbody) return;
     tbody.innerHTML = "";
 
     for(const r of leads){
@@ -168,7 +174,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  /* Submission → GitHub API */
+  /* Submission → GitHub API (with fallback) */
   async function submitIssue(out){
     const csvHeader = "lead_id,lead_name,lead_address,lead_city,lead_subcity,lead_state,lead_ticket,vendor_id,vendor_name,vendor_quote,vendor_subcity,vendor_city,vendor_address,note";
     const csvRow = [
@@ -195,11 +201,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      lastSubmit.textContent = `Created GitHub Issue #${data.number} at ${new Date().toLocaleString()}`;
+      if (lastSubmit) lastSubmit.textContent = `Created GitHub Issue #${data.number} at ${new Date().toLocaleString()}`;
       showToast("Issue created successfully!");
     } catch (err) {
-      console.error(err);
-      showToast("Failed to create issue.");
+      console.error("API failed, falling back:", err);
+      // fallback to opening issue manually
+      const body = encodeURIComponent(issue.body);
+      window.open(CONFIG.GITHUB_API_URL.replace("/repos/", "/") + "/new?title=" + encodeURIComponent(issue.title) + "&body=" + body, "_blank");
+      showToast("Fallback: Opened GitHub issue in new tab.");
     }
   }
 
@@ -227,7 +236,7 @@ document.addEventListener("DOMContentLoaded", () => {
     qEl.value = ""; rowEl.querySelector('.note').value = ""; sel.selectedIndex = 0;
   }
 
-  // Kick off once DOM ready
+  // Start
   init();
 });
 </script>
