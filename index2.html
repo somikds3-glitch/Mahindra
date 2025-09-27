@@ -10,7 +10,7 @@
       --accent:#5ea0ff; --accent-2:#63f5b8; --ring:rgba(94,160,255,.35);
       --radius:14px; --shadow:0 10px 30px rgba(0,0,0,.32);
       --border:rgba(255,255,255,.08); --border-soft:rgba(255,255,255,.06);
-      --grid-gap:16px; --font:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      --font:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
     }
     *{box-sizing:border-box}
     body{margin:0;font-family:var(--font);color:var(--ink);background:var(--bg)}
@@ -64,7 +64,7 @@
 
   <div id="toast" class="toast"></div>
 
-  <!-- Tiny panic overlay for the first error (helps when Safari goes blank) -->
+  <!-- Panic overlay: prints the first runtime error on the page (helps with blank screens) -->
   <script>
   (function(){
     function paint(msg, src, line, col, err){
@@ -84,7 +84,8 @@
       LEADS_CSV: "HTML.csv",
       VENDORS_CSV: "vendor.csv",
       GITHUB_API_URL: "https://api.github.com/repos/somikds3-glitch/Mahindra/issues",
-      GITHUB_PAT: "REPLACE_WITH_SERVER_SIDE_TOKEN" // move to server; browsers gossip
+      GITHUB_PAT: "YOUR_REAL_PAT_HERE",      // move server-side in production
+      OPEN_GITHUB_FALLBACK: false            // never redirect to GitHub
     };
 
     var statusBox   = document.getElementById('status');
@@ -111,36 +112,25 @@
       return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; });
     }
 
-    // CSV parser that handles quoted fields and commas inside quotes
+    /* CSV parser that handles quotes and commas-in-quotes (Safari-safe) */
     function parseCSV(text){
-      var rows = [];
-      var row = [];
-      var i=0, field="", inQuotes=false, c, n=text.length;
-
+      var rows = [], row = [], i=0, field="", inQuotes=false, c, n=text.length;
       function pushField(){ row.push(field); field=""; }
       function pushRow(){ rows.push(row); row=[]; }
-
       while(i<n){
         c = text[i++];
         if(inQuotes){
           if(c === '"'){
-            if(i<n && text[i] === '"'){ field += '"'; i++; } // escaped quote
-            else { inQuotes = false; }
+            if(i<n && text[i] === '"'){ field += '"'; i++; } else { inQuotes = false; }
           } else { field += c; }
         } else {
           if(c === '"'){ inQuotes = true; }
           else if(c === ','){ pushField(); }
-          else if(c === '\r'){
-            // ignore, will handle on \n
-          }
-          else if(c === '\n'){
-            pushField(); pushRow();
-          } else {
-            field += c;
-          }
+          else if(c === '\r'){ /* ignore CR */ }
+          else if(c === '\n'){ pushField(); pushRow(); }
+          else { field += c; }
         }
       }
-      // last field/row
       pushField();
       if(row.length>1 || (row.length===1 && row[0]!=="" )) pushRow();
 
@@ -148,16 +138,13 @@
       var headers = rows.shift().map(function(h){ return h.trim(); });
       var objs = rows.map(function(r){
         var o = {};
-        for(var j=0;j<headers.length;j++){
-          o[headers[j]] = (r[j]||"").trim();
-        }
+        for(var j=0;j<headers.length;j++){ o[headers[j]] = (r[j]||"").trim(); }
         return o;
       });
       return { headers: headers, rows: objs };
     }
 
     function fetchCSV(path){
-      // cache-busting; works fine in Safari
       return fetch(path + "?_ts=" + Date.now(), { cache: "no-store" })
         .then(function(res){
           if(!res.ok) throw new Error("Failed to fetch " + path + " (" + res.status + ")");
@@ -171,12 +158,10 @@
     }
 
     function uniqueSorted(arr){
-      var seen = Object.create(null);
-      var out = [];
+      var seen = Object.create(null), out = [];
       for(var i=0;i<arr.length;i++){
-        var v = (arr[i]||"").trim();
-        if(!v) continue;
-        if(!seen[v]){ seen[v] = 1; out.push(v); }
+        var v = (arr[i]||"").trim(); if(!v) continue;
+        if(!seen[v]){ seen[v]=1; out.push(v); }
       }
       out.sort(function(a,b){ return a.localeCompare(b); });
       return out;
@@ -242,8 +227,7 @@
 
     function csvEscape(val){
       var s = String(val==null ? "" : val);
-      // Use regex instead of replaceAll for Safari compatibility
-      s = s.replace(/"/g, '""');
+      s = s.replace(/"/g, '""'); // Safari-safe
       return '"' + s + '"';
     }
 
@@ -260,14 +244,10 @@
         body: "Please upsert this row:\n\n```csv\n"+csvHeader+"\n"+csvRow+"\n```\n"
       };
 
-      // Guard: don’t try POST without a token (Safari pops CORS otherwise)
-      if(!CONFIG.GITHUB_PAT || CONFIG.GITHUB_PAT.indexOf("REPLACE_") === 0){
-        window.open(
-          "https://github.com/somikds3-glitch/Mahindra/issues/new?title=" +
-          encodeURIComponent(issue.title) + "&body=" + encodeURIComponent(issue.body),
-          "_blank"
-        );
-        showToast("Opened GitHub issue page (no token set).");
+      // Hard-stop if no token; NEVER redirect
+      if(!CONFIG.GITHUB_PAT || /REPLACE|YOUR_REAL_PAT/i.test(CONFIG.GITHUB_PAT)){
+        showToast("Missing GitHub token. Staying on page.");
+        console.error("GitHub PAT is missing. Set CONFIG.GITHUB_PAT.");
         return;
       }
 
@@ -276,12 +256,18 @@
         headers: {
           "Authorization": "Bearer " + CONFIG.GITHUB_PAT,
           "Accept": "application/vnd.github+json",
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-GitHub-Api-Version": "2022-11-28"
         },
         body: JSON.stringify(issue)
       })
       .then(function(res){
-        if(!res.ok) return res.text().then(function(t){ throw new Error(t||("HTTP "+res.status)); });
+        if(!res.ok){
+          return res.text().then(function(t){
+            var msg = "GitHub API error ("+res.status+"): " + (t || res.statusText);
+            throw new Error(msg);
+          });
+        }
         return res.json();
       })
       .then(function(data){
@@ -289,13 +275,10 @@
         showToast("Issue created successfully!");
       })
       .catch(function(err){
-        console.error("API failed, fallback:", err);
-        window.open(
-          "https://github.com/somikds3-glitch/Mahindra/issues/new?title=" +
-          encodeURIComponent(issue.title) + "&body=" + encodeURIComponent(issue.body),
-          "_blank"
-        );
-        showToast("Fallback: opened GitHub issue page.");
+        console.error(err);
+        showToast("Submit failed. See error box.");
+        errorState.style.display = "block";
+        errorState.textContent = "Submission failed: " + err.message;
       });
     }
 
@@ -341,14 +324,14 @@
           console.error(err);
           statusBox.textContent = "Error loading data.";
           errorState.style.display = "block";
+          errorState.textContent = "Load failed: " + err.message;
         });
     }
 
-    // Bind buttons
+    // Buttons
     var reloadBtn = document.getElementById('reloadBtn');
     if(reloadBtn) reloadBtn.addEventListener('click', function(){
       init();
-      // reset filters after reload
       stateSel.value = "";
       populateCityOptions(allOpenLeads, "");
       citySel.value = "";
@@ -363,7 +346,7 @@
       applyFilters();
     });
 
-    // Filter listeners
+    // Filters
     stateSel.addEventListener('change', function(){
       populateCityOptions(allOpenLeads, stateSel.value);
       citySel.value = "";
