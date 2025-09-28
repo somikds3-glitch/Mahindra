@@ -220,30 +220,38 @@
       renderLeadTable(filteredLeads);
       setStatus(filteredLeads.length, allOpenLeads.length);
     }
-<script>
+
+    <script>
 function submitIssue(out){
-  fetch("https://script.google.com/macros/s/AKfycbyJdZeJZzEjsYhvveAPAj9pCllfmd8BoQtvP2Q_7LA8yUSxk_why4SxUMzSbwh-G9Wh/exec", {
+  fetch("https://script.google.com/macros/s/AKfycbyXHyVsCVqeZpP7wuteH232xvSVdkwcfkVN0nN1vx4AS1U0ZVwitEqACX2wvGbnSDo/exec", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(out)
   })
   .then(async (res) => {
     const ct = res.headers.get("content-type") || "";
-    // Try to parse JSON if possible; otherwise read text so we can surface a useful error
-    const body = ct.includes("application/json") ? await res.json().catch(() => ({})) : await res.text();
+    let body;
+    if (ct.includes("application/json")) {
+      body = await res.json().catch(() => ({}));
+    } else {
+      body = await res.text(); // <- if you were about to get '<html...'
+    }
     return { ok: res.ok, status: res.status, body };
   })
   .then((r) => {
-    // Accept either {ok:true} JSON or a truthy 'ok' flag; otherwise show diagnostic
-    const ok = typeof r.body === "object" ? r.body.ok === true : false;
-    if (!r.ok || !ok) {
-      const msg = typeof r.body === "object"
-        ? (r.body.error || r.body.message || JSON.stringify(r.body))
-        : r.body?.slice(0, 300) || "Unknown server response";
+    // Accept only {ok:true} JSON
+    if (typeof r.body === "object") {
+      if (r.body && r.body.ok === true) {
+        lastSubmit.textContent = "Saved to Google Sheet.";
+        showToast("Saved!");
+        return;
+      }
+      const msg = r.body.error || r.body.message || JSON.stringify(r.body);
       throw new Error(`Server said (${r.status}): ${msg}`);
+    } else {
+      // Got HTML/text; surface it
+      throw new Error(`Server did not return JSON (${r.status}). First 200 chars:\n` + r.body.slice(0,200));
     }
-    lastSubmit.textContent = "Saved to Google Sheet.";
-    showToast("Saved!");
   })
   .catch((err) => {
     console.error(err);
@@ -253,6 +261,7 @@ function submitIssue(out){
   });
 }
 </script>
+
 
 
     function handleSubmit(lead, rowEl){
