@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Leads & Vendor Quotes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0c111c; --panel:#0f1626; --ink:#e7eefc; --muted:#9bb0d8;
+      --accent:#5ea0ff; --accent-2:#63f5b8; --ring:rgba(94,160,255,.35);
+      --radius:14px; --shadow:0 10px 30px rgba(0,0,0,.32);
+      --border:rgba(255,255,255,.08); --border-soft:rgba(255,255,255,.06);
+      --font:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:var(--font);color:var(--ink);background:var(--bg)}
+    header{padding:20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    .title{font-size:24px;font-weight:bold;margin-right:auto}
+    button,select{background:#121a2b;color:var(--ink);border:1px solid var(--border);
+      border-radius:10px;padding:8px 10px;cursor:pointer}
+    button:hover{border-color:var(--accent)}
+    .wrap{max-width:1200px;margin:20px auto;padding:20px}
+    .panel{background:var(--panel);border-radius:var(--radius);padding:16px}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{padding:10px;border:1px solid var(--border-soft);text-align:left}
+    thead th{background:#0d1526;color:#bcd;position:sticky;top:0}
+    .pill{padding:2px 8px;border-radius:8px;background:#1b2238;border:1px solid var(--border)}
+    .toast{position:fixed;right:16px;bottom:16px;background:var(--panel);padding:10px 14px;
+      border-radius:8px;border:1px solid var(--border);display:none;box-shadow:var(--shadow)}
+    .toast.show{display:block}
+    .muted{color:var(--muted)}
+    input[type="number"]{width:120px;background:#0e1526;border:1px solid var(--border);
+      color:var(--ink);border-radius:8px;padding:6px 8px}
+    #status{font-size:14px;color:var(--muted)}
+    #emptyState,#errorState{padding:12px;border:1px dashed var(--border);border-radius:10px;margin-top:10px}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">Leads (Open) & Vendor Quotes</div>
+    <div id="status">Ready.</div>
+    <button id="reloadBtn">Reload CSVs</button>
+    <button id="clearFilters">Clear</button>
+    <select id="stateFilter"><option value="">All states</option></select>
+    <select id="cityFilter"><option value="">All cities</option></select>
+  </header>
+
+  <div class="wrap panel">
+    <div id="emptyState" style="display:none;">No leads match your filters.</div>
+    <div id="errorState" style="display:none;">Could not load CSVs.</div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Lead ID</th><th>Name</th><th>Address</th><th>City</th>
+          <th>Subcity</th><th>State</th><th>Ticket</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="leadBody"></tbody>
+    </table>
+
+    <div id="lastSubmit" class="muted" style="margin-top:10px;"></div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Panic overlay: shows the first runtime error on the page -->
+  <script>
+  (function(){
+    function paint(msg, src, line, col, err){
+      var box=document.createElement('pre');
+      box.style.cssText="position:fixed;inset:12px;z-index:99999;background:#1b1b1b;color:#fff;border:1px solid #444;padding:12px;overflow:auto;max-height:90vh;white-space:pre-wrap";
+      box.textContent=["🔥 JS error:", msg||"", src?("at "+src+":"+(line||0)+":"+(col||0)):"", (err&&err.stack)||""].filter(Boolean).join("\n");
+      document.body.appendChild(box);
+    }
+    window.addEventListener('error', function(e){ paint(e.message,e.filename,e.lineno,e.colno,e.error); }, { once:true });
+    window.addEventListener('unhandledrejection', function(e){ paint(String((e.reason&&e.reason.stack)||e.reason||"Unhandled promise rejection")); }, { once:true });
+  })();
+  </script>
+
+  <script>
+  document.addEventListener("DOMContentLoaded", function(){
+    var CONFIG = {
+      LEADS_CSV: "HTML.csv",
+      VENDORS_CSV: "vendor.csv",
+      CREATE_ISSUE_URL: "/api/create-issue" // our backend endpoint
+    };
+
+    var statusBox   = document.getElementById('status');
+    var lastSubmit  = document.getElementById('lastSubmit');
+    var emptyState  = document.getElementById('emptyState');
+    var errorState  = document.getElementById('errorState');
+    var toastEl     = document.getElementById('toast');
+
+    var stateSel = document.getElementById('stateFilter');
+    var citySel  = document.getElementById('cityFilter');
+
+    var vendors = [];
+    var allOpenLeads = [];
+    var filteredLeads = [];
+
+    function showToast(msg){
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      setTimeout(function(){ toastEl.classList.remove('show'); }, 2500);
+    }
+
+    function escapeHTML(s){
+      s = s || "";
+      return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; });
+    }
+
+    // Redact secret-looking patterns from user input
+    function redactSecrets(s){
+      if(!s) return s;
+      s = s.replace(/\bgithub_pat_[A-Za-z0-9_]{50,}\b/g, '[REDACTED_GITHUB_PAT]');
+      s = s.replace(/\bghp_[A-Za-z0-9]{36,}\b/g, '[REDACTED_GHP]');
+      s = s.replace(/\bgho_[A-Za-z0-9]{36,}\b/g, '[REDACTED_GHO]');
+      s = s.replace(/\bghu_[A-Za-z0-9]{36,}\b/g, '[REDACTED_GHU]');
+      s = s.replace(/\bghs_[A-Za-z0-9]{36,}\b/g, '[REDACTED_GHS]');
+      s = s.replace(/\bghr_[A-Za-z0-9]{36,}\b/g, '[REDACTED_GHR]');
+      s = s.replace(/\b[A-Za-z0-9_\-]{40,}\b/g, '[REDACTED]');
+      return s;
+    }
+
+    // CSV parser (handles quotes/commas)
+    function parseCSV(text){
+      var rows=[], row=[], i=0, field="", inQuotes=false, c, n=text.length;
+      function pushField(){ row.push(field); field=""; }
+      function pushRow(){ rows.push(row); row=[]; }
+      while(i<n){
+        c=text[i++];
+        if(inQuotes){
+          if(c==='"'){ if(i<n && text[i]==='"'){ field+='"'; i++; } else { inQuotes=false; } }
+          else { field+=c; }
+        } else {
+          if(c==='"'){ inQuotes=true; }
+          else if(c===','){ pushField(); }
+          else if(c==='\r'){ }
+          else if(c==='\n'){ pushField(); pushRow(); }
+          else { field+=c; }
+        }
+      }
+      pushField(); if(row.length>1 || (row.length===1 && row[0]!=="" )) pushRow();
+      if(rows.length===0) return { headers:[], rows:[] };
+      var headers=rows.shift().map(function(h){ return h.trim(); });
+      var objs=rows.map(function(r){
+        var o={}; for(var j=0;j<headers.length;j++){ o[headers[j]]=(r[j]||"").trim(); } return o;
+      });
+      return { headers:headers, rows:objs };
+    }
+
+    function fetchCSV(path){
+      return fetch(path+"?_ts="+Date.now(), { cache:"no-store" })
+        .then(function(res){ if(!res.ok) throw new Error("Failed to fetch "+path+" ("+res.status+")"); return res.text(); })
+        .then(parseCSV);
+    }
+
+    function setStatus(count, total){ statusBox.textContent = "Showing " + count + " of " + total + " open leads."; }
+
+    function uniqueSorted(arr){
+      var seen=Object.create(null), out=[];
+      for(var i=0;i<arr.length;i++){ var v=(arr[i]||"").trim(); if(!v) continue; if(!seen[v]){ seen[v]=1; out.push(v); } }
+      out.sort(function(a,b){ return a.localeCompare(b); }); return out;
+    }
+
+    function populateStateOptions(rows){
+      var states = uniqueSorted(rows.map(function(r){ return r.lead_state; }));
+      stateSel.innerHTML = '<option value="">All states</option>' +
+        states.map(function(s){ return '<option value="'+escapeHTML(s)+'">'+escapeHTML(s)+'</option>'; }).join('');
+    }
+
+    function populateCityOptions(rows, state){
+      var source = state ? rows.filter(function(r){ return (r.lead_state||"")===state; }) : rows;
+      var cities = uniqueSorted(source.map(function(r){ return r.lead_city; }));
+      citySel.innerHTML = '<option value="">All cities</option>' +
+        cities.map(function(c){ return '<option value="'+escapeHTML(c)+'">'+escapeHTML(c)+'</option>'; }).join('');
+    }
+
+    function renderLeadTable(leads){
+      var tbody=document.getElementById('leadBody');
+      tbody.innerHTML="";
+      if(!leads || leads.length===0){ emptyState.style.display="block"; return; }
+      emptyState.style.display="none";
+      for(var i=0;i<leads.length;i++){
+        var r=leads[i];
+        var tr=document.createElement('tr');
+        tr.innerHTML =
+          '<td>'+escapeHTML(r.lead_id)+'</td>'+
+          '<td>'+escapeHTML(r.lead_name)+'</td>'+
+          '<td>'+escapeHTML(r.lead_address)+'</td>'+
+          '<td>'+escapeHTML(r.lead_city)+'</td>'+
+          '<td>'+escapeHTML(r.lead_subcity)+'</td>'+
+          '<td>'+escapeHTML(r.lead_state)+'</td>'+
+          '<td><span class="pill">'+escapeHTML(r.lead_ticket)+'</span></td>'+
+          '<td>'+
+            '<input type="number" class="vendorQuote" placeholder="Quote (₹)" /> '+
+            '<button class="submitBtn">Submit</button>'+
+          '</td>';
+        (function(lead, rowEl){
+          var btn=tr.querySelector('.submitBtn');
+          btn.addEventListener('click', function(){ handleSubmit(lead, rowEl); });
+        })(r, tr);
+        tbody.appendChild(tr);
+      }
+    }
+
+    function applyFilters(){
+      var selState=stateSel.value, selCity=citySel.value;
+      filteredLeads = allOpenLeads.filter(function(r){
+        var stateOk = !selState || (r.lead_state||"")===selState;
+        var cityOk  = !selCity  || (r.lead_city||"")===selCity;
+        return stateOk && cityOk;
+      });
+      renderLeadTable(filteredLeads);
+      setStatus(filteredLeads.length, allOpenLeads.length);
+    }
+
+    function csvEscape(val){ var s=String(val==null?"":val); s=s.replace(/"/g,'""'); return '"'+s+'"'; }
+
+    function submitIssue(out){
+      var csvHeader="lead_id,lead_name,lead_address,lead_city,lead_subcity,lead_state,lead_ticket,note";
+      var safeNote = redactSecrets(out.note);
+      var csvRowArr=[ out.lead_id,out.lead_name,out.lead_address,out.lead_city,out.lead_subcity,out.lead_state,out.lead_ticket,safeNote ];
+      var csvRow = csvRowArr.map(csvEscape).join(",");
+
+      var issue = {
+        title: "Vendor Quote",
+        body: "Please upsert this row:\n\n```csv\n"+csvHeader+"\n"+csvRow+"\n```\n"
+      };
+
+      fetch(CONFIG.CREATE_ISSUE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(issue)
+      })
+      .then(function(res){
+        return res.json().then(function(data){ return { ok: res.ok, status: res.status, data: data }; });
+      })
+      .then(function(r){
+        if(!r.ok){
+          var msg = r.data && (r.data.error || r.data.message || JSON.stringify(r.data));
+          throw new Error("Create issue failed ("+r.status+"): " + (msg || "Unknown error"));
+        }
+        lastSubmit.textContent = "Created GitHub Issue #"+r.data.number;
+        showToast("Issue created successfully!");
+      })
+      .catch(function(err){
+        console.error(err);
+        showToast("Submit failed. See error box.");
+        errorState.style.display="block";
+        errorState.textContent = "Submission failed: " + err.message;
+      });
+    }
+
+    function handleSubmit(lead, rowEl){
+      var qEl=rowEl.querySelector('.vendorQuote');
+      var quote=(qEl.value||"").trim();
+      if(!quote){ showToast("Enter a quote"); return; }
+      submitIssue({
+        lead_id: lead.lead_id, lead_name: lead.lead_name, lead_address: lead.lead_address,
+        lead_city: lead.lead_city, lead_subcity: lead.lead_subcity, lead_state: lead.lead_state,
+        lead_ticket: lead.lead_ticket, note: quote
+      });
+      qEl.value="";
+    }
+
+    function init(){
+      statusBox.textContent="Loading…";
+      emptyState.style.display="none";
+      errorState.style.display="none";
+
+      Promise.all([ fetchCSV(CONFIG.LEADS_CSV), fetchCSV(CONFIG.VENDORS_CSV) ])
+        .then(function(results){
+          var leadCSV=results[0], vendorCSV=results[1];
+          vendors=vendorCSV.rows;
+          allOpenLeads = leadCSV.rows.filter(function(r){ return (r.lead_ticket||"").toLowerCase()==="open"; });
+
+          populateStateOptions(allOpenLeads);
+          populateCityOptions(allOpenLeads, "");
+
+          filteredLeads=allOpenLeads.slice();
+          renderLeadTable(filteredLeads);
+          setStatus(filteredLeads.length, allOpenLeads.length);
+          statusBox.textContent="Loaded " + allOpenLeads.length + " open leads.";
+        })
+        .catch(function(err){
+          console.error(err);
+          statusBox.textContent="Error loading data.";
+          errorState.style.display="block";
+          errorState.textContent="Load failed: " + err.message;
+        });
+    }
+
+    // Buttons
+    var reloadBtn=document.getElementById('reloadBtn');
+    if(reloadBtn) reloadBtn.addEventListener('click', function(){
+      init(); stateSel.value=""; populateCityOptions(allOpenLeads, ""); citySel.value=""; applyFilters();
+    });
+    var clearBtn=document.getElementById('clearFilters');
+    if(clearBtn) clearBtn.addEventListener('click', function(){
+      stateSel.value=""; populateCityOptions(allOpenLeads, ""); citySel.value=""; applyFilters();
+    });
+
+    // Filters
+    stateSel.addEventListener('change', function(){ populateCityOptions(allOpenLeads, stateSel.value); citySel.value=""; applyFilters(); });
+    citySel.addEventListener('change', applyFilters);
+
+    init();
+  });
+  </script>
+</body>
+</html>
