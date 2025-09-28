@@ -45,7 +45,7 @@
     </div>
   </header>
 
-  <!-- Early bootstrap: if this runs, buttons should respond -->
+  <!-- Early bootstrap: keep tiny and bulletproof -->
   <script>
     (function(){
       try{
@@ -55,9 +55,7 @@
           alert('Debug button is wired. If later UI still fails, a later script crashed.');
         };
         window.__boot_ok = true;
-      }catch(e){
-        // If even this fails, the page is truly broken
-      }
+      }catch(e){ /* swallow */ }
     })();
   </script>
 
@@ -81,8 +79,8 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script>
-  // Minimal panic overlay — uses proper 
-, no stray newlines in strings
+  // Panic overlay — strings use 
+, never raw newlines
   (function(){
     function paint(msg, src, line, col, err){
       var box=document.createElement('pre');
@@ -98,7 +96,6 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', function(){
-    if (window.__boot_ok && statusBox) { statusBox.textContent = 'Boot OK. Starting…'; }
     var CONFIG = {
       CSV_BASE: './',                 // folder where the CSVs live
       LEADS_CSV: 'HTML.csv',          // case-sensitive
@@ -107,6 +104,7 @@
     };
 
     var statusBox   = document.getElementById('status');
+    if (window.__boot_ok && statusBox) { statusBox.textContent = 'Boot OK. Starting…'; }
     var lastSubmit  = document.getElementById('lastSubmit');
     var emptyState  = document.getElementById('emptyState');
     var errorState  = document.getElementById('errorState');
@@ -139,7 +137,7 @@
           if(c === '"'){ inQuotes = true; }
           else if(c === ','){ pushField(); }
           else if(c === '
-'){ /* ignore */ }
+'){ /* ignore CR */ }
           else if(c === '
 '){ pushField(); pushRow(); }
           else { field += c; }
@@ -280,6 +278,27 @@
 ' + String(b).slice(0,200);
       }).catch(function(e){ lastSubmit.textContent = 'Debug failed: '+e.message; });
     });
+
+    // ---- tiny self-tests (do not block UI) ----
+    (function selfTests(){
+      try{
+        var pass=0, fail=0; function expect(cond, msg){ if(cond){pass++;} else {fail++; console.error('TEST FAIL:', msg);} }
+        var s1 = 'lead_id,lead_name
+1,Alice
+2,Bob
+';
+        var p1 = parseCSV(s1); expect(p1.rows.length===2, 'simple CSV row count'); expect(p1.rows[0].lead_name==='Alice', 'simple CSV field map');
+        var s2 = 'lead_id,lead_address
+1,"12 Main, Apt 5"
+';
+        var p2 = parseCSV(s2); expect(p2.rows[0].lead_address==='12 Main, Apt 5', 'quoted comma in field');
+        var s3 = 'lead_id,lead_name
+3,Carol
+';
+        var p3 = parseCSV(s3); expect(p3.rows.length===1 && p3.rows[0].lead_name==='Carol', 'CRLF handled');
+        if (fail===0){ console.log('Self-tests passed:', pass); } else { console.warn('Self-tests passed:', pass, 'failed:', fail); }
+      }catch(e){ console.warn('Self-tests error:', e.message); }
+    })();
 
     // Filters
     stateSel.addEventListener('change', function(){ populateCityOptions(allLeads, stateSel.value); citySel.value=''; applyFilters(); });
