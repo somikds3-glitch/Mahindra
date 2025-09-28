@@ -72,7 +72,7 @@
     function paint(msg, src, line, col, err){
       var box=document.createElement('pre');
       box.style.cssText='position:fixed;inset:12px;z-index:99999;background:#1b1b1b;color:#fff;border:1px solid #444;padding:12px;overflow:auto;max-height:90vh;white-space:pre-wrap';
-      box.textContent=['🔥 JS error:', msg||'', src?('at '+src+':'+(line||0)+':'+(col||0)):'', (err&&err.stack)||''].filter(Boolean).join('
+      box.textContent=['🔥 JS error:', msg||'', src?('at '+src+':' + (line||0) + ':' + (col||0)):'', (err&&err.stack)||''].filter(Boolean).join('
 ');
       document.body.appendChild(box);
     }
@@ -296,13 +296,6 @@
     }
 
     function init(){
-      if (location.protocol === 'file:'){
-        errorState.style.display = 'block';
-        errorState.textContent = 'Load failed: This page is opened via file:// which blocks fetch(). Serve it over http(s) or set CONFIG.CSV_BASE to an absolute URL.';
-        statusBox.textContent = 'Blocked by browser security (file://)';
-        return;
-      }
-
       statusBox.textContent = 'Loading…';
       emptyState.style.display = 'none';
       errorState.style.display = 'none';
