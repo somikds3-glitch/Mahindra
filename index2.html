@@ -43,21 +43,22 @@
     .quote-row{ display:grid; grid-template-columns: 1fr 1fr 1fr auto; gap:10px; margin-top:8px; }
     .hint{ font-size:12px; color:var(--muted); margin-top:8px }
     .status{ font-size:13px; color:var(--muted); padding:8px 16px }
-    .ok{ color:#7affbc }
-    .err{ color:#ff7a7a }
+    .ok{ color:#7affbc } .err{ color:#ff7a7a }
+    .toast{position:fixed;right:16px;bottom:16px;background:#11182a;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.12);display:none}
+    .toast.show{display:block}
   </style>
 </head>
 <body>
   <header>
     <div class="title"><span class="dot"></span> Leads (Open) & Vendor Quotes</div>
-    <div class="sub">Reads <code>HTML.csv</code> & <code>vendor.csv</code> from repo root. Submits to <code>Google Sheet</code> via Apps Script.</div>
+    <div class="sub">Reads <code>HTML.csv</code> & <code>vendor.csv</code>. Submits to Google Sheet via <code>NoCodeAPI</code>.</div>
   </header>
 
   <div class="wrap panel">
     <div class="toolbar">
-      <span class="pill">Mode: <strong>Apps Script</strong></span>
+      <span class="pill">Sink: <strong>NoCodeAPI → Google Sheets</strong></span>
       <button class="secondary" id="reloadBtn">Reload CSVs</button>
-      <button class="secondary" id="pingBtn">Ping API</button>
+      <button class="secondary" id="debugBtn">Debug</button>
       <div class="status" id="status">Ready.</div>
     </div>
 
@@ -77,32 +78,58 @@
       <div class="card">
         <h3 style="margin:0 0 6px">How it works</h3>
         <ol style="margin:8px 0 10px 18px; color:var(--muted); line-height:1.5">
-          <li>Pick a vendor from <code>vendor.csv</code>, enter a <strong>vendor_quote</strong>, click <em>Submit</em>.</li>
-          <li>We POST the data to your **Apps Script Web App** URL.</li>
-          <li>The script appends the row to your Google Sheet and returns <code>{ ok: true }</code>.</li>
+          <li>Pick a vendor from <code>vendor.csv</code>, add a <strong>quote</strong>, hit <em>Submit</em>.</li>
+          <li>We POST a JSON object to your NoCodeAPI endpoint (<code>/addRows</code> with <code>?tabId=Sheet1</code>).</li>
+          <li>NoCodeAPI appends a row to your Google Sheet under the headers.</li>
         </ol>
-        <div class="hint">Files needed: <code>HTML.csv</code>, <code>vendor.csv</code> (root).</div>
+        <div class="hint">Sheet headers expected (left→right):<br>
+          <code>lead_id, lead_name, lead_address, lead_city, lead_subcity, lead_state, lead_ticket, vendor_id, vendor_name, vendor_quote, vendor_subcity, vendor_city, vendor_address, note, timestamp</code>
+        </div>
         <div id="lastSubmit" class="hint" style="margin-top:12px"></div>
       </div>
     </div>
   </div>
 
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
   <script>
+  // ---------- Config ----------
   const CONFIG = {
     LEADS_CSV: "HTML.csv",
     VENDORS_CSV: "vendor.csv",
-    // ⬇️ Replace with your deployed Apps Script Web App URL
-    APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzbIexI5TFhFOvmjtc9U4e84Q8JYFcq-Pm6AAQnVmrCsbYVzRKvgGESXAK7suguYoCQ/exec"
+    // Your NoCodeAPI endpoint (we'll append ?tabId=Sheet1 if missing)
+    SHEET_API_BASE: "https://v1.nocodeapi.com/somik/google_sheets/wrhTkBHrUtmiKJnQ/addRows",
+    SHEET_TAB: "Sheet1"
   };
 
+  function sheetEndpoint() {
+    const hasQuery = CONFIG.SHEET_API_BASE.includes("?");
+    const hasTab = CONFIG.SHEET_API_BASE.includes("tabId=");
+    if (hasTab) return CONFIG.SHEET_API_BASE;
+    return CONFIG.SHEET_API_BASE + (hasQuery ? "&" : "?") + "tabId=" + encodeURIComponent(CONFIG.SHEET_TAB);
+  }
+
+  // ---------- Helpers ----------
   const statusBox = document.getElementById('status');
   const lastSubmit = document.getElementById('lastSubmit');
-  document.getElementById('reloadBtn').addEventListener('click', () => init());
-  document.getElementById('pingBtn').addEventListener('click', pingApi);
+  const toastEl = document.getElementById('toast');
   const setStatus = (msg) => statusBox.textContent = msg;
+  const showToast = (msg) => { toastEl.textContent = msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'), 1800); };
+  const escapeHTML = s => (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]));
+
+  function candidateUrlsFor(file){
+    const origin = location.origin;
+    const p = location.pathname.replace(/\/[^/]*$/, '/');        // current dir
+    const up = p.replace(/\/[^/]*\/$/, '/');                     // one up
+    const urls = [origin + p + file, origin + '/' + file, origin + up + file];
+    const seen = Object.create(null), out = [];
+    for (const u of urls){ if(!seen[u]){ seen[u]=1; out.push(u); } }
+    return out;
+  }
 
   function parseCSV(text){
-    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n');
+    const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim().split('\n');
+    if (!lines.length) return { headers:[], rows:[] };
     const headers = lines.shift().split(',').map(h=>h.trim());
     const rows = lines.filter(Boolean).map(line => {
       const cols = line.split(',').map(c=>c.trim());
@@ -113,48 +140,38 @@
   }
 
   async function fetchCSV(path){
-    const res = await fetch(path + "?_ts=" + Date.now(), { cache: "no-store" });
-    if (!res.ok) throw new Error("Failed to fetch " + path + " (" + res.status + ")");
-    const text = await res.text();
-    return parseCSV(text);
-  }
-
-  let vendors = [];
-
-  async function init(){
-    try{
-      setStatus("Loading CSVs…");
-      const [leadCSV, vendorCSV] = await Promise.all([
-        fetchCSV(CONFIG.LEADS_CSV),
-        fetchCSV(CONFIG.VENDORS_CSV)
-      ]);
-      vendors = vendorCSV.rows; // vendor_id,vendor_name,vendor_subcity,vendor_city,vendor_address
-      const openLeads = leadCSV.rows.filter(r => (r.lead_ticket||"").toLowerCase() === "open");
-      renderLeadTable(openLeads);
-      setStatus(`Loaded ${openLeads.length} open leads, ${vendors.length} vendors.`);
-    }catch(err){
-      console.error(err);
-      setStatus("Error: " + err.message);
+    const tries = candidateUrlsFor(path);
+    const tried = [];
+    async function attempt(i){
+      if (i >= tries.length) throw new Error("All locations failed for " + path + " → " + tried.join(" | "));
+      const url = tries[i] + (tries[i].includes("?") ? "" : "?") + "_ts=" + Date.now();
+      tried.push(url);
+      const res = await fetch(url, { cache:"no-store" });
+      if (!res.ok) return attempt(i+1);
+      const text = await res.text();
+      const parsed = parseCSV(text);
+      parsed.__source = tries[i];
+      return parsed;
     }
+    return attempt(0);
   }
 
-  function escapeHTML(s){ return (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  // ---------- Page logic ----------
+  let vendors = [];
 
   function vendorOptionsHTMLForCity(city){
     const list = vendors.filter(v => (v.vendor_city||"").toLowerCase() === (city||"").toLowerCase());
     if (!list.length) return `<option value="">No vendors in ${escapeHTML(city || "this city")}</option>`;
     return list.map(v => {
       const label = `${v.vendor_name} (${v.vendor_subcity || ""})`;
-      const val = JSON.stringify(v);
-      // keep it HTML-safe
-      return `<option value='${val.replaceAll("'", "&apos;")}'>${escapeHTML(label)}</option>`;
+      const val = JSON.stringify(v).replaceAll("'", "&apos;");
+      return `<option value='${val}'>${escapeHTML(label)}</option>`;
     }).join("");
   }
 
   function renderLeadTable(leads){
     const tbody = document.getElementById('leadBody');
     tbody.innerHTML = "";
-
     for(const r of leads){
       const opts = vendorOptionsHTMLForCity(r.lead_city);
       const tr = document.createElement('tr');
@@ -184,53 +201,21 @@
     }
   }
 
-  // ---------- Apps Script integration ----------
-  async function submitToAppsScript(payload){
-    // Use text/plain to avoid CORS preflight; server parses JSON body.
-    const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
+  async function submitToSheetApiObject(payload){
+    const endpoint = sheetEndpoint(); // ensures ?tabId=Sheet1 exists
+    const res = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload)
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([payload]) // NoCodeAPI expects an array of objects at /addRows
     });
-
-    const ct = res.headers.get("content-type") || "";
-    let body;
-    if (ct.includes("application/json")) {
-      try { body = await res.json(); } catch { body = {}; }
-    } else {
-      body = await res.text();
-    }
-
-    if (!res.ok) {
-      const msg = typeof body === "object" ? (body.error || body.message || JSON.stringify(body)) : (body || res.status);
-      throw new Error(`Apps Script HTTP ${res.status}: ${msg}`);
-    }
-
-    // Expect { ok: true } from doPost
-    if (typeof body === "object") {
-      if (body && body.ok === true) return body;
-      const msg = body.error || body.message || JSON.stringify(body);
-      throw new Error(`Apps Script: ${msg}`);
-    }
-
-    // Non-JSON but OK: accept as success
-    return { ok: true, raw: body };
+    const body = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(body.message || JSON.stringify(body) || `HTTP ${res.status}`);
+    return body;
   }
-
-  async function pingApi(){
-    try{
-      const res = await fetch(CONFIG.APPS_SCRIPT_URL, { method: "GET", cache: "no-store" });
-      const text = await res.text();
-      lastSubmit.innerHTML = `<span class="ok">Ping ${res.status}</span> – first 120 chars:<br><code>${escapeHTML(text.slice(0,120))}</code>`;
-    }catch(err){
-      lastSubmit.innerHTML = `<span class="err">Ping failed:</span> ${escapeHTML(err.message)}`;
-    }
-  }
-  // --------------------------------------------
 
   async function handleSubmit(lead, rowEl){
-    const sel = rowEl.querySelector('.vendorSel');
-    const qEl = rowEl.querySelector('.vendorQuote');
+    const sel  = rowEl.querySelector('.vendorSel');
+    const qEl  = rowEl.querySelector('.vendorQuote');
     const note = rowEl.querySelector('.note').value.trim();
     const vendorVal = sel.value;
     const quote = qEl.value.trim();
@@ -238,34 +223,80 @@
     if (!vendorVal){ alert("Select a vendor"); return; }
     if (!quote || isNaN(+quote)){ alert("Enter a numeric vendor quote"); return; }
 
-    const v = JSON.parse(vendorVal);
+    const v = JSON.parse(vendorVal.replaceAll("&apos;","'"));
     const out = {
-      // lead props
-      lead_id: lead.lead_id, lead_name: lead.lead_name, lead_address: lead.lead_address,
-      lead_city: lead.lead_city, lead_subcity: lead.lead_subcity, lead_state: lead.lead_state,
+      lead_id: lead.lead_id,
+      lead_name: lead.lead_name,
+      lead_address: lead.lead_address,
+      lead_city: lead.lead_city,
+      lead_subcity: lead.lead_subcity,
+      lead_state: lead.lead_state,
       lead_ticket: lead.lead_ticket,
-      // vendor + quote
-      vendor_id: v.vendor_id, vendor_name: v.vendor_name, vendor_quote: quote,
-      vendor_subcity: v.vendor_subcity, vendor_city: v.vendor_city, vendor_address: v.vendor_address,
-      note
+      vendor_id: v.vendor_id,
+      vendor_name: v.vendor_name,
+      vendor_quote: quote,
+      vendor_subcity: v.vendor_subcity,
+      vendor_city: v.vendor_city,
+      vendor_address: v.vendor_address,
+      note,
+      timestamp: new Date().toISOString()
     };
 
     try{
-      setStatus("Submitting to Google Sheet…");
-      const r = await submitToAppsScript(out);
-      lastSubmit.innerHTML = `<span class="ok">Saved</span> at ${new Date().toLocaleString()}`;
-      setStatus("Ready.");
+      setStatus("Submitting…");
+      await submitToSheetApiObject(out);
+      lastSubmit.innerHTML = `<span class="ok">Saved</span> via NoCodeAPI @ ${new Date().toLocaleString()}`;
+      showToast("Saved!");
     }catch(err){
       console.error(err);
       lastSubmit.innerHTML = `<span class="err">Submission failed:</span> ${escapeHTML(err.message)}`;
+      showToast("Submit failed");
+    }finally{
       setStatus("Ready.");
+      qEl.value = ""; rowEl.querySelector('.note').value = ""; sel.selectedIndex = 0;
     }
-
-    qEl.value = "";
-    rowEl.querySelector('.note').value = "";
-    sel.selectedIndex = 0;
   }
 
+  async function init(){
+    try{
+      setStatus("Loading CSVs…");
+      const [leadCSV, vendorCSV] = await Promise.all([
+        fetchCSV(CONFIG.LEADS_CSV),
+        fetchCSV(CONFIG.VENDORS_CSV)
+      ]);
+      vendors = vendorCSV.rows;
+      const openLeads = leadCSV.rows.filter(r => (r.lead_ticket||"").toLowerCase() === "open");
+      renderLeadTable(openLeads);
+      setStatus(`Loaded ${openLeads.length} open leads, ${vendors.length} vendors.`);
+    }catch(err){
+      console.error(err);
+      setStatus("Error: " + err.message);
+      lastSubmit.textContent = "Tip: ensure HTML.csv and vendor.csv are in the same folder as this page (or repo root).";
+    }
+  }
+
+  // ---------- Buttons ----------
+  document.getElementById('reloadBtn').addEventListener('click', () => init());
+  document.getElementById('debugBtn').addEventListener('click', async () => {
+    try{
+      const leadUrls = candidateUrlsFor(CONFIG.LEADS_CSV);
+      const vendUrls = candidateUrlsFor(CONFIG.VENDORS_CSV);
+      const [a,b] = await Promise.all([
+        fetch(leadUrls[0]).then(r=>r.text()).catch(e=>'ERR:'+e.message),
+        fetch(vendUrls[0]).then(r=>r.text()).catch(e=>'ERR:'+e.message)
+      ]);
+      lastSubmit.textContent =
+        'HTML.csv tried: ' + leadUrls.join(' → ') + '\n' +
+        'vendor.csv tried: ' + vendUrls.join(' → ') + '\n\n' +
+        'HTML.csv first 200 chars:\n' + String(a).slice(0,200) + '\n\n' +
+        'vendor.csv first 200 chars:\n' + String(b).slice(0,200) + '\n\n' +
+        'NoCodeAPI endpoint:\n' + sheetEndpoint();
+    }catch(e){
+      lastSubmit.textContent = 'Debug failed: ' + e.message;
+    }
+  });
+
+  // ---------- Go ----------
   init();
   </script>
 </body>
