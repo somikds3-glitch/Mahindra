@@ -5,19 +5,12 @@
   <title>Leads (Open) & Vendor Quotes</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{
-      --bg:#0c111c; --panel:#0f1626; --ink:#e7eefc; --muted:#9bb0d8;
-      --accent:#5ea0ff; --accent-2:#63f5b8; --ring:rgba(94,160,255,.35);
-      --radius:14px; --shadow:0 10px 30px rgba(0,0,0,.32);
-      --border:rgba(255,255,255,.08); --border-soft:rgba(255,255,255,.06);
-      --font:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-    }
+    :root{ --bg:#0c111c; --panel:#0f1626; --ink:#e7eefc; --muted:#9bb0d8; --accent:#5ea0ff; --accent-2:#63f5b8; --ring:rgba(94,160,255,.35); --radius:14px; --shadow:0 10px 30px rgba(0,0,0,.32); --border:rgba(255,255,255,.08); --border-soft:rgba(255,255,255,.06); --font:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
     *{box-sizing:border-box}
     body{margin:0;font-family:var(--font);color:var(--ink);background:var(--bg)}
     header{padding:20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
     .title{font-size:24px;font-weight:700;margin-right:auto}
-    button,select{background:#121a2b;color:var(--ink);border:1px solid var(--border);
-      border-radius:10px;padding:8px 10px;cursor:pointer}
+    button,select,input[type="checkbox"]{background:#121a2b;color:var(--ink);border:1px solid var(--border);border-radius:10px;padding:8px 10px;cursor:pointer}
     button:hover{border-color:var(--accent)}
     .wrap{max-width:1200px;margin:20px auto;padding:20px}
     .panel{background:var(--panel);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
@@ -25,33 +18,37 @@
     th,td{padding:10px;border:1px solid var(--border-soft);text-align:left}
     thead th{background:#0d1526;color:#bcd;position:sticky;top:0;z-index:1}
     .pill{padding:2px 8px;border-radius:8px;background:#1b2238;border:1px solid var(--border)}
-    .toast{position:fixed;right:16px;bottom:16px;background:var(--panel);padding:10px 14px;
-      border-radius:8px;border:1px solid var(--border);display:none;box-shadow:var(--shadow)}
+    .toast{position:fixed;right:16px;bottom:16px;background:var(--panel);padding:10px 14px;border-radius:8px;border:1px solid var(--border);display:none;box-shadow:var(--shadow)}
     .toast.show{display:block}
     .muted{color:var(--muted)}
-    input[type="number"]{width:140px;background:#0e1526;border:1px solid var(--border);
-      color:var(--ink);border-radius:8px;padding:6px 8px}
+    input[type="number"]{width:140px;background:#0e1526;border:1px solid var(--border);color:var(--ink);border-radius:8px;padding:6px 8px}
     #status{font-size:14px;color:var(--muted)}
     #emptyState,#errorState{padding:12px;border:1px dashed var(--border);border-radius:10px;margin-top:10px}
     .row-actions{display:flex;gap:8px;align-items:center}
+    .controls{display:flex;gap:10px;align-items:center}
   </style>
 </head>
 <body>
   <header>
     <div class="title">Leads (Open) & Vendor Quotes</div>
     <div id="status">Ready.</div>
-    <button id="reloadBtn" title="Reload CSVs">Reload</button>
-    <button id="clearFilters" title="Clear filters">Clear</button>
-    <button id="pingBtn" title="Ping Apps Script">Ping API</button>
-    <select id="stateFilter"><option value="">All states</option></select>
-    <select id="cityFilter"><option value="">All cities</option></select>
+    <div class="controls">
+      <label style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="onlyOpen" checked /> Only OPEN
+      </label>
+      <button id="reloadBtn" title="Reload CSVs">Reload</button>
+      <button id="clearFilters" title="Clear filters">Clear</button>
+      <button id="pingBtn" title="Ping Apps Script">Ping API</button>
+      <select id="stateFilter"><option value="">All states</option></select>
+      <select id="cityFilter"><option value="">All cities</option></select>
+    </div>
   </header>
 
   <div class="wrap panel">
     <div id="emptyState" style="display:none;">No leads match your filters.</div>
     <div id="errorState" style="display:none;">Could not load CSVs.</div>
 
-    <table aria-label="Open leads">
+    <table aria-label="Leads">
       <thead>
         <tr>
           <th>Lead ID</th><th>Name</th><th>Address</th><th>City</th>
@@ -66,13 +63,13 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <!-- Panic overlay: keep tiny and self-contained -->
   <script>
+  // Panic overlay kept minimal
   (function(){
     function paint(msg, src, line, col, err){
       var box=document.createElement('pre');
       box.style.cssText='position:fixed;inset:12px;z-index:99999;background:#1b1b1b;color:#fff;border:1px solid #444;padding:12px;overflow:auto;max-height:90vh;white-space:pre-wrap';
-      box.textContent=['🔥 JS error:', msg||'', src?('at '+src+':' + (line||0) + ':' + (col||0)):'', (err&&err.stack)||''].filter(Boolean).join('
+      box.textContent=['🔥 JS error:', msg||'', src?('at '+src+':'+(line||0)+':'+(col||0)):'', (err&&err.stack)||''].filter(Boolean).join('
 ');
       document.body.appendChild(box);
     }
@@ -98,28 +95,17 @@
 
     var stateSel = document.getElementById('stateFilter');
     var citySel  = document.getElementById('cityFilter');
+    var onlyOpen = document.getElementById('onlyOpen');
 
     var vendors = [];
-    var allOpenLeads = [];
-    var filteredLeads = [];
+    var allLeads = [];
+    var shownLeads = [];
 
-    function showToast(msg){
-      toastEl.textContent = msg;
-      toastEl.classList.add('show');
-      setTimeout(function(){ toastEl.classList.remove('show'); }, 2000);
-    }
+    function showToast(msg){ toastEl.textContent = msg; toastEl.classList.add('show'); setTimeout(function(){ toastEl.classList.remove('show'); }, 2000); }
+    function escapeHTML(s){ s = s || ''; return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]; }); }
+    function urlFor(path){ if (/^https?:/i.test(path)) return path; return (CONFIG.CSV_BASE || '') + path; }
 
-    function escapeHTML(s){
-      s = s || '';
-      return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]; });
-    }
-
-    function urlFor(path){
-      if (/^https?:/i.test(path)) return path;
-      return (CONFIG.CSV_BASE || '') + path;
-    }
-
-    // CSV parser
+    // CSV robust parse (handles quotes)
     function parseCSV(text){
       var rows = [], row = [], i=0, field='', inQuotes=false, c, n=text.length;
       function pushField(){ row.push(field); field=''; }
@@ -141,12 +127,23 @@
       }
       pushField();
       if(row.length>1 || (row.length===1 && row[0]!=='' )) pushRow();
-
       if(rows.length===0) return { headers:[], rows:[] };
-      var headers = rows.shift().map(function(h){ return h.trim(); });
-      var objs = rows.map(function(r){
-        var o={}; for(var j=0;j<headers.length;j++){ o[headers[j]]=(r[j]||'').trim(); }
-        return o;
+      var headers = rows.shift();
+      // normalize headers -> snake_case
+      headers = headers.map(function(h){ return String(h||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,''); });
+      var objs = rows.map(function(r){ var o={}; for(var j=0;j<headers.length;j++){ o[headers[j]]=(r[j]||'').trim(); } return o; });
+      // header aliases
+      objs = objs.map(function(o){
+        var m = Object.create(null);
+        for (var k in o){ m[k]=o[k]; }
+        m.lead_id     = m.lead_id||m.id||m.leadid||'';
+        m.lead_name   = m.lead_name||m.name||m.lead||'';
+        m.lead_address= m.lead_address||m.address||'';
+        m.lead_city   = m.lead_city||m.city||'';
+        m.lead_subcity= m.lead_subcity||m.subcity||m.area||'';
+        m.lead_state  = m.lead_state||m.state||'';
+        m.lead_ticket = (m.lead_ticket||m.ticket||m.status||'').trim();
+        return m;
       });
       return { headers:headers, rows:objs };
     }
@@ -154,52 +151,22 @@
     function fetchCSV(path){
       var url = urlFor(path) + '?_ts=' + Date.now();
       return fetch(url, { cache:'no-store' })
-        .then(function(res){
-          if(!res.ok) throw new Error('HTTP ' + res.status + ' for ' + url);
-          return res.text();
-        })
+        .then(function(res){ if(!res.ok) throw new Error('HTTP ' + res.status + ' for ' + url); return res.text(); })
         .then(parseCSV)
-        .catch(function(err){
-          throw new Error('CSV fetch failed for ' + url + ': ' + err.message);
-        });
+        .catch(function(err){ throw new Error('CSV fetch failed for ' + url + ': ' + err.message); });
     }
 
-    function setStatus(count, total){
-      statusBox.textContent = 'Showing ' + count + ' of ' + total + ' open leads.';
-    }
+    function setStatus(msg){ statusBox.textContent = msg; }
+    function uniqueSorted(arr){ var seen = Object.create(null), out = []; for(var i=0;i<arr.length;i++){ var v=(arr[i]||'').trim(); if(!v) continue; if(!seen[v]){ seen[v]=1; out.push(v); } } out.sort(function(a,b){ return a.localeCompare(b); }); return out; }
 
-    function uniqueSorted(arr){
-      var seen = Object.create(null), out = [];
-      for(var i=0;i<arr.length;i++){
-        var v=(arr[i]||'').trim(); if(!v) continue;
-        if(!seen[v]){ seen[v]=1; out.push(v); }
-      }
-      out.sort(function(a,b){ return a.localeCompare(b); });
-      return out;
-    }
-
-    function populateStateOptions(rows){
-      var states = uniqueSorted(rows.map(function(r){ return r.lead_state; }));
-      stateSel.innerHTML = '<option value="">All states</option>' +
-        states.map(function(s){ return '<option value="'+escapeHTML(s)+'">'+escapeHTML(s)+'</option>'; }).join('');
-    }
-
-    function populateCityOptions(rows, state){
-      var source = state ? rows.filter(function(r){ return (r.lead_state||'') === state; }) : rows;
-      var cities = uniqueSorted(source.map(function(r){ return r.lead_city; }));
-      citySel.innerHTML = '<option value="">All cities</option>' +
-        cities.map(function(c){ return '<option value="'+escapeHTML(c)+'">'+escapeHTML(c)+'</option>'; }).join('');
-    }
+    function populateStateOptions(rows){ var states = uniqueSorted(rows.map(function(r){ return r.lead_state; })); stateSel.innerHTML = '<option value="">All states</option>' + states.map(function(s){ return '<option value="'+escapeHTML(s)+'">'+escapeHTML(s)+'</option>'; }).join(''); }
+    function populateCityOptions(rows, state){ var source = state ? rows.filter(function(r){ return (r.lead_state||'') === state; }) : rows; var cities = uniqueSorted(source.map(function(r){ return r.lead_city; })); citySel.innerHTML = '<option value="">All cities</option>' + cities.map(function(c){ return '<option value="'+escapeHTML(c)+'">'+escapeHTML(c)+'</option>'; }).join(''); }
 
     function renderLeadTable(leads){
       var tbody = document.getElementById('leadBody');
       tbody.innerHTML = '';
-      if(!leads || leads.length===0){
-        emptyState.style.display = 'block';
-        return;
-      }
+      if(!leads || leads.length===0){ emptyState.style.display = 'block'; return; }
       emptyState.style.display = 'none';
-
       for(var i=0;i<leads.length;i++){
         var r = leads[i];
         var tr = document.createElement('tr');
@@ -210,162 +177,63 @@
           '<td>'+escapeHTML(r.lead_city)+'</td>'+
           '<td>'+escapeHTML(r.lead_subcity)+'</td>'+
           '<td>'+escapeHTML(r.lead_state)+'</td>'+
-          '<td><span class="pill">'+escapeHTML(r.lead_ticket)+'</span></td>'+
+          '<td><span class="pill">'+escapeHTML(r.lead_ticket||'')+'</span></td>'+
           '<td>'+
             '<div class="row-actions">'+
               '<input type="number" class="vendorQuote" placeholder="Quote (₹)" />'+
               '<button class="submitBtn">Submit</button>'+
             '</div>'+
           '</td>';
-        (function(lead, rowEl){
-          var btn = tr.querySelector('.submitBtn');
-          btn.addEventListener('click', function(){ handleSubmit(lead, rowEl); });
-        })(r, tr);
+        (function(lead, rowEl){ var btn = tr.querySelector('.submitBtn'); btn.addEventListener('click', function(){ handleSubmit(lead, rowEl); }); })(r, tr);
         tbody.appendChild(tr);
       }
     }
 
     function applyFilters(){
-      var selState = stateSel.value;
-      var selCity  = citySel.value;
-
-      filteredLeads = allOpenLeads.filter(function(r){
-        var stateOk = !selState || (r.lead_state||'') === selState;
-        var cityOk  = !selCity  || (r.lead_city||'')  === selCity;
-        return stateOk && cityOk;
-      });
-      renderLeadTable(filteredLeads);
-      setStatus(filteredLeads.length, allOpenLeads.length);
+      var selState = stateSel.value; var selCity = citySel.value; var openOnly = !!onlyOpen.checked;
+      var base = allLeads.slice();
+      if (openOnly){ base = base.filter(function(r){ return ((r.lead_ticket||'').trim().toLowerCase().indexOf('open')===0); }); }
+      // If filtering to OPEN yields 0, show ALL but warn in status
+      if (openOnly && base.length===0){ base = allLeads.slice(); setStatus('No OPEN rows detected in CSV. Showing ALL rows.'); }
+      shownLeads = base.filter(function(r){ var stateOk=!selState || (r.lead_state||'')===selState; var cityOk=!selCity || (r.lead_city||'')===selCity; return stateOk && cityOk; });
+      renderLeadTable(shownLeads);
+      statusBox.textContent = 'Showing ' + shownLeads.length + ' of ' + allLeads.length + (openOnly?' (OPEN filter on)':'');
     }
 
-    // Submit to Apps Script (simple CORS via text/plain)
     function submitIssue(out){
-      fetch(CONFIG.APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(out)
-      })
-      .then(async function(res){
-        var ct = res.headers.get('content-type') || '';
-        var body;
-        if (ct.includes('application/json')) {
-          try { body = await res.json(); } catch(e) { body = {}; }
-        } else {
-          body = await res.text();
-        }
-        return { ok: res.ok, status: res.status, body: body };
-      })
-      .then(function(r){
-        if (typeof r.body === 'object') {
-          if (r.body && r.body.ok === true) {
-            lastSubmit.textContent = 'Saved to Google Sheet.';
-            showToast('Saved!');
-            return;
-          }
-          var msg = r.body.error || r.body.message || JSON.stringify(r.body);
-          throw new Error('Server said ('+r.status+'): ' + msg);
-        } else {
-          if (r.ok && r.body.trim().length === 0) {
-            lastSubmit.textContent = 'Saved.';
-            showToast('Saved!');
-            return;
-          }
-          throw new Error('Server did not return JSON ('+r.status+'). First 200 chars:
-' + r.body.slice(0,200));
-        }
-      })
-      .catch(function(err){
-        console.error(err);
-        errorState.style.display = 'block';
-        errorState.textContent = 'Submission failed: ' + err.message;
-        showToast('Submit failed. See error box.');
-      });
+      fetch(CONFIG.APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(out) })
+      .then(async function(res){ var ct=res.headers.get('content-type')||''; var body = ct.includes('application/json') ? await res.json().catch(function(){return{};}) : await res.text(); return {ok:res.ok,status:res.status,body:body}; })
+      .then(function(r){ if (typeof r.body === 'object'){ if(r.body && r.body.ok===true){ lastSubmit.textContent='Saved to Google Sheet.'; showToast('Saved!'); return; } var msg=r.body.error||r.body.message||JSON.stringify(r.body); throw new Error('Server said ('+r.status+'): '+msg); } else { if(r.ok && String(r.body).trim().length===0){ lastSubmit.textContent='Saved.'; showToast('Saved!'); return; } throw new Error('Server did not return JSON ('+r.status+'). First 200 chars:
+'+String(r.body).slice(0,200)); } })
+      .catch(function(err){ console.error(err); errorState.style.display='block'; errorState.textContent='Submission failed: '+err.message; showToast('Submit failed. See error box.'); });
     }
 
-    function handleSubmit(lead, rowEl){
-      var qEl = rowEl.querySelector('.vendorQuote');
-      var quote = (qEl.value||'').trim();
-      if(!quote){ showToast('Enter a quote'); return; }
-      var out = {
-        lead_id: lead.lead_id, lead_name: lead.lead_name, lead_address: lead.lead_address,
-        lead_city: lead.lead_city, lead_subcity: lead.lead_subcity, lead_state: lead.lead_state,
-        lead_ticket: lead.lead_ticket, note: quote
-      };
-      submitIssue(out);
-      qEl.value = '';
-    }
+    function handleSubmit(lead, rowEl){ var qEl=rowEl.querySelector('.vendorQuote'); var quote=(qEl.value||'').trim(); if(!quote){ showToast('Enter a quote'); return; } var out={ lead_id:lead.lead_id, lead_name:lead.lead_name, lead_address:lead.lead_address, lead_city:lead.lead_city, lead_subcity:lead.lead_subcity, lead_state:lead.lead_state, lead_ticket:lead.lead_ticket, note:quote }; submitIssue(out); qEl.value=''; }
 
     function init(){
-      statusBox.textContent = 'Loading…';
-      emptyState.style.display = 'none';
-      errorState.style.display = 'none';
-
+      statusBox.textContent = 'Loading…'; emptyState.style.display='none'; errorState.style.display='none';
       Promise.all([ fetchCSV(CONFIG.LEADS_CSV), fetchCSV(CONFIG.VENDORS_CSV) ])
         .then(function(results){
           var leadCSV = results[0], vendorCSV = results[1];
           vendors = vendorCSV.rows;
-
-          allOpenLeads = leadCSV.rows.filter(function(r){
-            return (r.lead_ticket||'').toLowerCase() === 'open';
-          });
-
-          populateStateOptions(allOpenLeads);
-          populateCityOptions(allOpenLeads, '');
-
-          filteredLeads = allOpenLeads.slice();
-          renderLeadTable(filteredLeads);
-          setStatus(filteredLeads.length, allOpenLeads.length);
-
-          statusBox.textContent = 'Loaded ' + allOpenLeads.length + ' open leads.';
+          allLeads = leadCSV.rows; // <-- keep ALL rows, do not pre-filter
+          populateStateOptions(allLeads); populateCityOptions(allLeads, '');
+          applyFilters();
+          statusBox.textContent = 'Loaded '+ allLeads.length +' leads, '+ vendors.length +' vendors.';
         })
-        .catch(function(err){
-          console.error(err);
-          statusBox.textContent = 'Error loading data.';
-          errorState.style.display = 'block';
-          errorState.textContent = 'Load failed: ' + err.message;
-        });
+        .catch(function(err){ console.error(err); statusBox.textContent='Error loading data.'; errorState.style.display='block'; errorState.textContent='Load failed: ' + err.message; });
     }
 
     // Buttons
-    var reloadBtn = document.getElementById('reloadBtn');
-    if(reloadBtn) reloadBtn.addEventListener('click', function(){
-      init();
-      stateSel.value = '';
-      populateCityOptions(allOpenLeads, '');
-      citySel.value = '';
-      applyFilters();
-    });
-
-    var clearBtn = document.getElementById('clearFilters');
-    if(clearBtn) clearBtn.addEventListener('click', function(){
-      stateSel.value = '';
-      populateCityOptions(allOpenLeads, '');
-      citySel.value = '';
-      applyFilters();
-    });
-
-    var pingBtn = document.getElementById('pingBtn');
-    if (pingBtn) pingBtn.addEventListener('click', function(){
-      fetch(CONFIG.APPS_SCRIPT_URL, { method:'GET' })
-        .then(function(r){ return r.text().then(function(t){ return {status:r.status, body:t}; }); })
-        .then(function(r){
-          showToast('API ' + r.status);
-          lastSubmit.textContent = 'Ping response (first 200 chars):
-' + r.body.slice(0,200);
-        })
-        .catch(function(err){
-          showToast('Ping failed');
-          lastSubmit.textContent = 'Ping failed: ' + err.message;
-        });
-    });
+    var reloadBtn = document.getElementById('reloadBtn'); if(reloadBtn) reloadBtn.addEventListener('click', function(){ init(); stateSel.value=''; populateCityOptions(allLeads, ''); citySel.value=''; applyFilters(); });
+    var clearBtn = document.getElementById('clearFilters'); if(clearBtn) clearBtn.addEventListener('click', function(){ stateSel.value=''; populateCityOptions(allLeads, ''); citySel.value=''; applyFilters(); });
+    var pingBtn = document.getElementById('pingBtn'); if (pingBtn) pingBtn.addEventListener('click', function(){ fetch(CONFIG.APPS_SCRIPT_URL, { method:'GET' }).then(function(r){ return r.text().then(function(t){ return {status:r.status, body:t}; }); }).then(function(r){ showToast('API ' + r.status); lastSubmit.textContent = 'Ping response (first 200 chars):
+' + String(r.body).slice(0,200); }).catch(function(err){ showToast('Ping failed'); lastSubmit.textContent = 'Ping failed: ' + err.message; }); });
 
     // Filters
-    stateSel.addEventListener('change', function(){
-      populateCityOptions(allOpenLeads, stateSel.value);
-      citySel.value = '';
-      applyFilters();
-    });
+    stateSel.addEventListener('change', function(){ populateCityOptions(allLeads, stateSel.value); citySel.value=''; applyFilters(); });
     citySel.addEventListener('change', applyFilters);
+    onlyOpen.addEventListener('change', applyFilters);
 
     init();
   });
