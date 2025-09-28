@@ -1,335 +1,272 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Leads (Open) & Vendor Quotes</title>
+  <title>Leads & Vendor Quotes</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{ --bg:#0c111c; --panel:#0f1626; --ink:#e7eefc; --muted:#9bb0d8; --accent:#5ea0ff; --accent-2:#63f5b8; --ring:rgba(94,160,255,.35); --radius:14px; --shadow:0 10px 30px rgba(0,0,0,.32); --border:rgba(255,255,255,.08); --border-soft:rgba(255,255,255,.06); --font:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+    :root{ --bg:#0b0f19; --card:#11182a; --ink:#e8efff; --muted:#9bb0d8; --accent:#5ea0ff; --accent-2:#7affbc; --ring: rgba(94,160,255,0.35); --radius:14px; }
     *{box-sizing:border-box}
-    body{margin:0;font-family:var(--font);color:var(--ink);background:var(--bg)}
-    header{padding:20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-    .title{font-size:24px;font-weight:700;margin-right:auto}
-    button,select,input[type="checkbox"]{background:#121a2b;color:var(--ink);border:1px solid var(--border);border-radius:10px;padding:8px 10px;cursor:pointer}
-    button:hover{border-color:var(--accent)}
-    .wrap{max-width:1200px;margin:20px auto;padding:20px}
-    .panel{background:var(--panel);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
-    table{width:100%;border-collapse:collapse;margin-top:16px}
-    th,td{padding:10px;border:1px solid var(--border-soft);text-align:left}
-    thead th{background:#0d1526;color:#bcd;position:sticky;top:0;z-index:1}
-    .pill{padding:2px 8px;border-radius:8px;background:#1b2238;border:1px solid var(--border)}
-    .toast{position:fixed;right:16px;bottom:16px;background:var(--panel);padding:10px 14px;border-radius:8px;border:1px solid var(--border);display:none;box-shadow:var(--shadow)}
-    .toast.show{display:block}
-    .muted{color:var(--muted)}
-    input[type="number"]{width:140px;background:#0e1526;border:1px solid var(--border);color:var(--ink);border-radius:8px;padding:6px 8px}
-    #status{font-size:14px;color:var(--muted)}
-    #emptyState,#errorState{padding:12px;border:1px dashed var(--border);border-radius:10px;margin-top:10px}
-    .row-actions{display:flex;gap:8px;align-items:center}
-    .controls{display:flex;gap:10px;align-items:center}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #18213a 20%, transparent 60%),
+                  radial-gradient(900px 500px at 110% 10%, #102036 10%, transparent 60%), var(--bg);
+      color:var(--ink); min-height:100dvh;
+    }
+    header{ padding:32px 24px 8px; max-width:1200px; margin:0 auto; }
+    .title{ font-size: clamp(22px, 3vw, 34px); font-weight:700; display:flex; align-items:center; gap:12px; }
+    .title .dot{width:10px;height:10px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 20px var(--accent-2)}
+    .sub{color:var(--muted); margin-top:6px}
+    .wrap{max-width:1200px; margin:16px auto 48px; padding:0 24px}
+    .panel{
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      border:1px solid rgba(255,255,255,0.08); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+    .grid{ display:grid; gap:14px; grid-template-columns: 1.2fr 0.8fr; }
+    @media (max-width:900px){ .grid{grid-template-columns:1fr} }
+    .card{ padding:18px; border-radius:var(--radius); background:var(--card); border:1px solid rgba(255,255,255,0.06)}
+    .toolbar{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:16px; border-bottom:1px solid rgba(255,255,255,0.08); }
+    input, select, button, textarea{
+      background:#0f1526; color:var(--ink); border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px 12px; outline:none;
+    }
+    input:focus, select:focus, textarea:focus{ border-color: var(--accent); box-shadow: 0 0 0 4px var(--ring); }
+    button{ background: linear-gradient(180deg, var(--accent), #3b77c7); border:none; font-weight:600; cursor:pointer; }
+    button.secondary{ background:#0f1526; border:1px solid rgba(255,255,255,0.14) }
+    table{ width:100%; border-collapse:separate; border-spacing:0 8px; }
+    thead th{ text-align:left; font-size:13px; color:var(--muted); padding:10px 12px; }
+    tbody tr{ background:var(--card); border:1px solid rgba(255,255,255,0.06); }
+    tbody td{ padding:12px; border-top:1px solid rgba(255,255,255,0.06); border-bottom:1px solid rgba(255,255,255,0.06); }
+    tbody tr td:first-child{ border-left:1px solid rgba(255,255,255,0.06); border-radius:10px 0 0 10px}
+    tbody tr td:last-child{ border-right:1px solid rgba(255,255,255,0.06); border-radius:0 10px 10px 0}
+    .pill{ font-size:12px; padding:4px 8px; border-radius:999px; background:#0f1526; border:1px solid rgba(255,255,255,0.12); color:var(--muted)}
+    .right{ text-align:right }
+    .quote-row{ display:grid; grid-template-columns: 1fr 1fr 1fr auto; gap:10px; margin-top:8px; }
+    .hint{ font-size:12px; color:var(--muted); margin-top:8px }
+    .status{ font-size:13px; color:var(--muted); padding:8px 16px }
+    .ok{ color:#7affbc }
+    .err{ color:#ff7a7a }
   </style>
 </head>
 <body>
   <header>
-    <div class="title">Leads (Open) & Vendor Quotes</div>
-    <div id="status">Ready.</div>
-    <div class="controls">
-      <label style="display:flex;align-items:center;gap:6px">
-        <input type="checkbox" id="onlyOpen" /> Only OPEN
-      </label>
-      <button id="reloadBtn" title="Reload CSVs">Reload</button>
-      <button id="clearFilters" title="Clear filters">Clear</button>
-      <button id="pingBtn" title="Ping Apps Script">Ping API</button>
-      <button id="debugBtn" title="Show CSV debug" onclick="window.__dbg && window.__dbg()">Debug</button>
-      <select id="stateFilter"><option value="">All states</option></select>
-      <select id="cityFilter"><option value="">All cities</option></select>
-    </div>
+    <div class="title"><span class="dot"></span> Leads (Open) & Vendor Quotes</div>
+    <div class="sub">Reads <code>HTML.csv</code> & <code>vendor.csv</code> from repo root. Submits to <code>Google Sheet</code> via Apps Script.</div>
   </header>
 
-  <!-- Early bootstrap: keep tiny and bulletproof -->
-  <script>
-    (function(){
-      try{
-        var boot = document.getElementById('status');
-        if (boot) boot.textContent = 'Booting…';
-        window.__dbg = function(){
-          alert('Debug button is wired. If later UI still fails, a later script crashed.');
-        };
-        window.__boot_ok = true;
-      }catch(e){ /* swallow */ }
-    })();
-  </script>
-
   <div class="wrap panel">
-    <div id="emptyState" style="display:none;">No leads match your filters.</div>
-    <div id="errorState" style="display:none;">Could not load CSVs.</div>
+    <div class="toolbar">
+      <span class="pill">Mode: <strong>Apps Script</strong></span>
+      <button class="secondary" id="reloadBtn">Reload CSVs</button>
+      <button class="secondary" id="pingBtn">Ping API</button>
+      <div class="status" id="status">Ready.</div>
+    </div>
 
-    <table aria-label="Leads">
-      <thead>
-        <tr>
-          <th>Lead ID</th><th>Name</th><th>Address</th><th>City</th>
-          <th>Subcity</th><th>State</th><th>Ticket</th><th>Action</th>
-        </tr>
-      </thead>
-      <tbody id="leadBody"></tbody>
-    </table>
+    <div class="grid">
+      <div class="card">
+        <table id="leadTable">
+          <thead>
+            <tr>
+              <th>Lead ID</th><th>Name</th><th>Address</th><th>City</th>
+              <th>Subcity</th><th>State</th><th>Ticket</th><th class="right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="leadBody"></tbody>
+        </table>
+      </div>
 
-    <div id="lastSubmit" class="muted" style="margin-top:10px;"></div>
+      <div class="card">
+        <h3 style="margin:0 0 6px">How it works</h3>
+        <ol style="margin:8px 0 10px 18px; color:var(--muted); line-height:1.5">
+          <li>Pick a vendor from <code>vendor.csv</code>, enter a <strong>vendor_quote</strong>, click <em>Submit</em>.</li>
+          <li>We POST the data to your **Apps Script Web App** URL.</li>
+          <li>The script appends the row to your Google Sheet and returns <code>{ ok: true }</code>.</li>
+        </ol>
+        <div class="hint">Files needed: <code>HTML.csv</code>, <code>vendor.csv</code> (root).</div>
+        <div id="lastSubmit" class="hint" style="margin-top:12px"></div>
+      </div>
+    </div>
   </div>
 
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-
   <script>
-  // Panic overlay — strings use 
-, never raw newlines
-  (function(){
-    function paint(msg, src, line, col, err){
-      var box=document.createElement('pre');
-      box.style.cssText='position:fixed;inset:12px;z-index:99999;background:#1b1b1b;color:#fff;border:1px solid #444;padding:12px;overflow:auto;max-height:90vh;white-space:pre-wrap';
-      box.textContent=['🔥 JS error:', msg||'', src?('at '+src+':'+(line||0)+':'+(col||0)):'', (err&&err.stack)||''].filter(Boolean).join('
-');
-      document.body.appendChild(box);
+  const CONFIG = {
+    LEADS_CSV: "HTML.csv",
+    VENDORS_CSV: "vendor.csv",
+    // ⬇️ Replace with your deployed Apps Script Web App URL
+    APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbw6qlBeI-BLoZUZR3uua2RV_vj8DvfDe63R_Fu4FpyP50Rej4cPZXJk9NQ1JTPCkNv7/exec"
+  };
+
+  const statusBox = document.getElementById('status');
+  const lastSubmit = document.getElementById('lastSubmit');
+  document.getElementById('reloadBtn').addEventListener('click', () => init());
+  document.getElementById('pingBtn').addEventListener('click', pingApi);
+  const setStatus = (msg) => statusBox.textContent = msg;
+
+  function parseCSV(text){
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n');
+    const headers = lines.shift().split(',').map(h=>h.trim());
+    const rows = lines.filter(Boolean).map(line => {
+      const cols = line.split(',').map(c=>c.trim());
+      const obj = {}; headers.forEach((h,i)=> obj[h] = cols[i] ?? "");
+      return obj;
+    });
+    return { headers, rows };
+  }
+
+  async function fetchCSV(path){
+    const res = await fetch(path + "?_ts=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error("Failed to fetch " + path + " (" + res.status + ")");
+    const text = await res.text();
+    return parseCSV(text);
+  }
+
+  let vendors = [];
+
+  async function init(){
+    try{
+      setStatus("Loading CSVs…");
+      const [leadCSV, vendorCSV] = await Promise.all([
+        fetchCSV(CONFIG.LEADS_CSV),
+        fetchCSV(CONFIG.VENDORS_CSV)
+      ]);
+      vendors = vendorCSV.rows; // vendor_id,vendor_name,vendor_subcity,vendor_city,vendor_address
+      const openLeads = leadCSV.rows.filter(r => (r.lead_ticket||"").toLowerCase() === "open");
+      renderLeadTable(openLeads);
+      setStatus(`Loaded ${openLeads.length} open leads, ${vendors.length} vendors.`);
+    }catch(err){
+      console.error(err);
+      setStatus("Error: " + err.message);
     }
-    window.addEventListener('error', function(e){ paint(e.message,e.filename,e.lineno,e.colno,e.error); }, { once:true });
-    window.addEventListener('unhandledrejection', function(e){ paint(String((e.reason&&e.reason.stack)||e.reason||'Unhandled promise rejection')); }, { once:true });
-  })();
-  </script>
+  }
 
-  <script>
-  document.addEventListener('DOMContentLoaded', function(){
-    var CONFIG = {
-      CSV_BASE: '',                 // we'll auto-detect below; leave blank
-      LEADS_CSV: 'HTML.csv',        // case-sensitive
-      VENDORS_CSV: 'vendor.csv',    // case-sensitive
-      APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbw6qlBeI-BLoZUZR3uua2RV_vj8DvfDe63R_Fu4FpyP50Rej4cPZXJk9NQ1JTPCkNv7/exec'
-    };
+  function escapeHTML(s){ return (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-    var statusBox   = document.getElementById('status');
-    if (window.__boot_ok && statusBox) { statusBox.textContent = 'Boot OK. Starting…'; }
-    var lastSubmit  = document.getElementById('lastSubmit');
-    var emptyState  = document.getElementById('emptyState');
-    var errorState  = document.getElementById('errorState');
-    var toastEl     = document.getElementById('toast');
+  function vendorOptionsHTMLForCity(city){
+    const list = vendors.filter(v => (v.vendor_city||"").toLowerCase() === (city||"").toLowerCase());
+    if (!list.length) return `<option value="">No vendors in ${escapeHTML(city || "this city")}</option>`;
+    return list.map(v => {
+      const label = `${v.vendor_name} (${v.vendor_subcity || ""})`;
+      const val = JSON.stringify(v);
+      // keep it HTML-safe
+      return `<option value='${val.replaceAll("'", "&apos;")}'>${escapeHTML(label)}</option>`;
+    }).join("");
+  }
 
-    var stateSel = document.getElementById('stateFilter');
-    var citySel  = document.getElementById('cityFilter');
-    var onlyOpen = document.getElementById('onlyOpen');
+  function renderLeadTable(leads){
+    const tbody = document.getElementById('leadBody');
+    tbody.innerHTML = "";
 
-    var vendors = [];
-    var allLeads = [];
-    var shownLeads = [];
-
-    function showToast(msg){ toastEl.textContent = msg; toastEl.classList.add('show'); setTimeout(function(){ toastEl.classList.remove('show'); }, 2000); }
-    function escapeHTML(s){ s = s || ''; return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]; }); }
-    function candidateUrlsFor(file){
-      var origin = location.origin;
-      var p = location.pathname.replace(/\/[^/]*$/, '/'); // current dir
-      var up = p.replace(/\/[^/]*\/$/, '/'); // one level up
-      var urls = [origin + p + file, origin + '/' + file, origin + up + file];
-      var seen = Object.create(null), out=[]; for (var i=0;i<urls.length;i++){ if(!seen[urls[i]]){ seen[urls[i]]=1; out.push(urls[i]); } }
-      return out;
+    for(const r of leads){
+      const opts = vendorOptionsHTMLForCity(r.lead_city);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${escapeHTML(r.lead_id)}</strong></td>
+        <td>${escapeHTML(r.lead_name)}</td>
+        <td>${escapeHTML(r.lead_address)}</td>
+        <td>${escapeHTML(r.lead_city)}</td>
+        <td>${escapeHTML(r.lead_subcity)}</td>
+        <td>${escapeHTML(r.lead_state)}</td>
+        <td><span class="pill">${escapeHTML(r.lead_ticket)}</span></td>
+        <td class="right">
+          <div class="quote-row">
+            <select class="vendorSel">
+              <option value="">Select vendor…</option>
+              ${opts}
+            </select>
+            <input type="number" class="vendorQuote" placeholder="Vendor quote (₹)" min="0" step="0.01" />
+            <input type="text" class="note" placeholder="Optional note" />
+            <button class="submitBtn">Submit</button>
+          </div>
+          <div class="hint">We store: vendor_id, vendor_name, vendor_subcity, vendor_city, vendor_address + quote.</div>
+        </td>
+      `;
+      tr.querySelector('.submitBtn').addEventListener('click', () => handleSubmit(r, tr));
+      tbody.appendChild(tr);
     }
+  }
 
-    // Robust CSV parser (handles quotes, commas, CR/LF)
-    function parseCSV(text){
-      var rows = [], row = [], i=0, field='', inQuotes=false, c, n=text.length;
-      function pushField(){ row.push(field); field=''; }
-      function pushRow(){ rows.push(row); row=[]; }
-      while(i<n){
-        c = text[i++];
-        if(inQuotes){
-          if(c === '"'){
-            if(i<n && text[i] === '"'){ field += '"'; i++; } else { inQuotes = false; }
-          } else { field += c; }
-        } else {
-          if(c === '"'){ inQuotes = true; }
-          else if(c === ','){ pushField(); }
-          else if(c === '
-'){ /* ignore CR */ }
-          else if(c === '
-'){ pushField(); pushRow(); }
-          else { field += c; }
-        }
-      }
-      pushField();
-      if(row.length>1 || (row.length===1 && row[0]!=='' )) pushRow();
-
-      if(rows.length===0) return { headers:[], rows:[] };
-      var headers = rows.shift();
-      // If nothing but a mega-line was captured, fall back
-      if (rows.length === 0 && headers.join(',').indexOf('
-') !== -1){
-        return parseCSVFallback(text);
-      }
-      headers = headers.map(function(h){ return String(h||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,''); });
-      var objs = rows.map(function(r){ var o={}; for(var j=0;j<headers.length;j++){ o[headers[j]]=(r[j]||'').trim(); } return o; });
-      // Normalize to expected keys
-      objs = objs.map(function(o){
-        var m = Object.create(null); for (var k in o){ m[k]=o[k]; }
-        m.lead_id     = m.lead_id||m.id||m.leadid||'';
-        m.lead_name   = m.lead_name||m.name||m.lead||'';
-        m.lead_address= m.lead_address||m.address||'';
-        m.lead_city   = m.lead_city||m.city||'';
-        m.lead_subcity= m.lead_subcity||m.subcity||m.area||'';
-        m.lead_state  = m.lead_state||m.state||'';
-        m.lead_ticket = (m.lead_ticket||m.ticket||m.status||'').trim();
-        return m;
-      });
-      return { headers:headers, rows:objs };
-    }
-
-    function parseCSVFallback(text){
-      var lines = text.replace(/
-/g,'
-').replace(/
-/g,'
-').split('
-').filter(function(l){return l.length>0;});
-      if (lines.length === 0) return { headers:[], rows:[] };
-      var headers = lines.shift().split(',').map(function(h){return h.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');});
-      var rows = lines.map(function(line){ var cols = line.split(','); var o={}; for (var j=0;j<headers.length;j++){ o[headers[j]] = (cols[j]||'').trim(); } return o; });
-      rows = rows.map(function(m){ m.lead_id=m.lead_id||m.id||m.leadid||''; m.lead_name=m.lead_name||m.name||m.lead||''; m.lead_address=m.lead_address||m.address||''; m.lead_city=m.lead_city||m.city||''; m.lead_subcity=m.lead_subcity||m.subcity||m.area||''; m.lead_state=m.lead_state||m.state||''; m.lead_ticket=(m.lead_ticket||m.ticket||m.status||'').trim(); return m; });
-      return { headers:headers, rows:rows };
-    }
-
-    function fetchCSV(path){
-      var tries = candidateUrlsFor(path);
-      var tried = [];
-      function attempt(i){
-        if (i>=tries.length){ throw new Error('All locations failed for '+path+' → '+tried.join(' | ')); }
-        var url = tries[i] + (tries[i].indexOf('?')===-1 ? '?_ts=' + Date.now() : '');
-        tried.push(url);
-        return fetch(url, { cache:'no-store' })
-          .then(function(res){ if(!res.ok) throw new Error('HTTP '+res.status); return res.text(); })
-          .then(function(txt){ var parsed = parseCSV(txt); if (parsed.rows.length===0){ console.warn('Parsed 0 rows for', url); }
-            parsed.__source = url; return parsed; })
-          .catch(function(_){ return attempt(i+1); });
-      }
-      return attempt(0);
-    }
-
-    function setStatus(msg){ statusBox.textContent = msg; }
-    function uniqueSorted(arr){ var seen = Object.create(null), out = []; for(var i=0;i<arr.length;i++){ var v=(arr[i]||'').trim(); if(!v) continue; if(!seen[v]){ seen[v]=1; out.push(v); } } out.sort(function(a,b){ return a.localeCompare(b); }); return out; }
-
-    function populateStateOptions(rows){ var states = uniqueSorted(rows.map(function(r){ return r.lead_state; })); stateSel.innerHTML = '<option value="">All states</option>' + states.map(function(s){ return '<option value="'+escapeHTML(s)+'">'+escapeHTML(s)+'</option>'; }).join(''); }
-    function populateCityOptions(rows, state){ var source = state ? rows.filter(function(r){ return (r.lead_state||'') === state; }) : rows; var cities = uniqueSorted(source.map(function(r){ return r.lead_city; })); citySel.innerHTML = '<option value="">All cities</option>' + cities.map(function(c){ return '<option value="'+escapeHTML(c)+'">'+escapeHTML(c)+'</option>'; }).join(''); }
-
-    function renderLeadTable(leads){
-      var tbody = document.getElementById('leadBody');
-      tbody.innerHTML = '';
-      if(!leads || leads.length===0){ emptyState.style.display = 'block'; return; }
-      emptyState.style.display = 'none';
-      for(var i=0;i<leads.length;i++){
-        var r = leads[i];
-        var tr = document.createElement('tr');
-        tr.innerHTML =
-          '<td>'+escapeHTML(r.lead_id)+'</td>'+
-          '<td>'+escapeHTML(r.lead_name)+'</td>'+
-          '<td>'+escapeHTML(r.lead_address)+'</td>'+
-          '<td>'+escapeHTML(r.lead_city)+'</td>'+
-          '<td>'+escapeHTML(r.lead_subcity)+'</td>'+
-          '<td>'+escapeHTML(r.lead_state)+'</td>'+
-          '<td><span class="pill">'+escapeHTML(r.lead_ticket||'')+'</span></td>'+
-          '<td>'+
-            '<div class="row-actions">'+
-              '<input type="number" class="vendorQuote" placeholder="Quote (₹)" />'+
-              '<button class="submitBtn">Submit</button>'+
-            '</div>'+
-          '</td>';
-        (function(lead, rowEl){ var btn = tr.querySelector('.submitBtn'); btn.addEventListener('click', function(){ handleSubmit(lead, rowEl); }); })(r, tr);
-        tbody.appendChild(tr);
-      }
-    }
-
-    function applyFilters(){
-      var selState = stateSel.value; var selCity = citySel.value; var openOnly = !!onlyOpen.checked;
-      var base = allLeads.slice();
-      if (openOnly){ base = base.filter(function(r){ return ((r.lead_ticket||'').trim().toLowerCase().indexOf('open')===0); }); }
-      if (openOnly && base.length===0){ base = allLeads.slice(); setStatus('No OPEN rows detected in CSV. Showing ALL rows.'); }
-      shownLeads = base.filter(function(r){ var stateOk=!selState || (r.lead_state||'')===selState; var cityOk=!selCity || (r.lead_city||'')===selCity; return stateOk && cityOk; });
-      renderLeadTable(shownLeads);
-      statusBox.textContent = 'Showing ' + shownLeads.length + ' of ' + allLeads.length + (openOnly?' (OPEN filter on)':'');
-    }
-
-    function submitIssue(out){
-      fetch(CONFIG.APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(out) })
-      .then(async function(res){ var ct=res.headers.get('content-type')||''; var body = ct.includes('application/json') ? await res.json().catch(function(){return{};}) : await res.text(); return {ok:res.ok,status:res.status,body:body}; })
-      .then(function(r){ if (typeof r.body === 'object'){ if(r.body && r.body.ok===true){ lastSubmit.textContent='Saved to Google Sheet.'; showToast('Saved!'); return; } var msg=r.body.error||r.body.message||JSON.stringify(r.body); throw new Error('Server said ('+r.status+'): '+msg); } else { if(r.ok && String(r.body).trim().length===0){ lastSubmit.textContent='Saved.'; showToast('Saved!'); return; } throw new Error('Server did not return JSON ('+r.status+'). First 200 chars:
-'+String(r.body).slice(0,200)); } })
-      .catch(function(err){ console.error(err); errorState.style.display='block'; errorState.textContent='Submission failed: '+err.message; showToast('Submit failed. See error box.'); });
-    }
-
-    function handleSubmit(lead, rowEl){ var qEl=rowEl.querySelector('.vendorQuote'); var quote=(qEl.value||'').trim(); if(!quote){ showToast('Enter a quote'); return; } var out={ lead_id:lead.lead_id, lead_name:lead.lead_name, lead_address:lead.lead_address, lead_city:lead.lead_city, lead_subcity:lead.lead_subcity, lead_state:lead.lead_state, lead_ticket:lead.lead_ticket, note:quote }; submitIssue(out); qEl.value=''; }
-
-    function init(){
-      statusBox.textContent = 'Loading…'; emptyState.style.display='none'; errorState.style.display='none';
-      fetchCSV(CONFIG.LEADS_CSV)
-        .then(function(leadCSV){
-          allLeads = leadCSV.rows;
-          populateStateOptions(allLeads); populateCityOptions(allLeads, '');
-          applyFilters();
-          statusBox.textContent = 'Loaded ' + allLeads.length + ' leads.' + (leadCSV.__source ? ' (from '+leadCSV.__source+')' : '');
-          return fetchCSV(CONFIG.VENDORS_CSV)
-            .then(function(vendorCSV){ vendors = vendorCSV.rows; statusBox.textContent += ' ' + vendors.length + ' vendors.'; })
-            .catch(function(err){ console.warn('Vendor CSV load failed:', err.message); lastSubmit.textContent = 'Vendor.csv load failed: ' + err.message; });
-        })
-        .catch(function(err){ console.error(err); statusBox.textContent='Error loading data.'; errorState.style.display='block'; errorState.textContent='Load failed: ' + err.message; });
-    }
-
-    // Buttons
-    var reloadBtn = document.getElementById('reloadBtn'); if(reloadBtn) reloadBtn.addEventListener('click', function(){ init(); stateSel.value=''; populateCityOptions(allLeads, ''); citySel.value=''; applyFilters(); });
-    var clearBtn = document.getElementById('clearFilters'); if(clearBtn) clearBtn.addEventListener('click', function(){ stateSel.value=''; populateCityOptions(allLeads, ''); citySel.value=''; applyFilters(); });
-    var pingBtn = document.getElementById('pingBtn'); if (pingBtn) pingBtn.addEventListener('click', function(){ fetch(CONFIG.APPS_SCRIPT_URL, { method:'GET' }).then(function(r){ return r.text().then(function(t){ return {status:r.status, body:t}; }); }).then(function(r){ showToast('API ' + r.status); lastSubmit.textContent = 'Ping response (first 200 chars):
-' + String(r.body).slice(0,200); }).catch(function(err){ showToast('Ping failed'); lastSubmit.textContent = 'Ping failed: ' + err.message; }); });
-    var debugBtn = document.getElementById('debugBtn'); if (debugBtn) debugBtn.addEventListener('click', function(){
-      var leadUrls = candidateUrlsFor(CONFIG.LEADS_CSV).join(' → ');
-      var vendUrls = candidateUrlsFor(CONFIG.VENDORS_CSV).join(' → ');
-      Promise.all([
-        fetch(candidateUrlsFor(CONFIG.LEADS_CSV)[0]).then(function(r){return r.text();}).catch(function(e){return 'ERR:'+e.message;}),
-        fetch(candidateUrlsFor(CONFIG.VENDORS_CSV)[0]).then(function(r){return r.text();}).catch(function(e){return 'ERR:'+e.message;})
-      ]).then(function(pair){
-        var a = pair[0], b = pair[1];
-        lastSubmit.textContent = 'HTML.csv tried: '+leadUrls+'
-' +
-                                 'vendor.csv tried: '+vendUrls+'
-
-' +
-                                 'HTML.csv first 200 chars:
-' + String(a).slice(0,200) + '
-
-' +
-                                 'vendor.csv first 200 chars:
-' + String(b).slice(0,200);
-      }).catch(function(e){ lastSubmit.textContent = 'Debug failed: '+e.message; });
+  // ---------- Apps Script integration ----------
+  async function submitToAppsScript(payload){
+    // Use text/plain to avoid CORS preflight; server parses JSON body.
+    const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload)
     });
 
-    // ---- tiny self-tests (do not block UI) ----
-    (function selfTests(){
-      try{
-        var pass=0, fail=0; function expect(cond, msg){ if(cond){pass++;} else {fail++; console.error('TEST FAIL:', msg);} }
-        var s1 = 'lead_id,lead_name
-1,Alice
-2,Bob
-';
-        var p1 = parseCSV(s1); expect(p1.rows.length===2, 'simple CSV row count'); expect(p1.rows[0].lead_name==='Alice', 'simple CSV field map');
-        var s2 = 'lead_id,lead_address
-1,"12 Main, Apt 5"
-';
-        var p2 = parseCSV(s2); expect(p2.rows[0].lead_address==='12 Main, Apt 5', 'quoted comma in field');
-        var s3 = 'lead_id,lead_name
-3,Carol
-';
-        var p3 = parseCSV(s3); expect(p3.rows.length===1 && p3.rows[0].lead_name==='Carol', 'CRLF handled');
-        if (fail===0){ console.log('Self-tests passed:', pass); } else { console.warn('Self-tests passed:', pass, 'failed:', fail); }
-      }catch(e){ console.warn('Self-tests error:', e.message); }
-    })();
+    const ct = res.headers.get("content-type") || "";
+    let body;
+    if (ct.includes("application/json")) {
+      try { body = await res.json(); } catch { body = {}; }
+    } else {
+      body = await res.text();
+    }
 
-    // Filters
-    stateSel.addEventListener('change', function(){ populateCityOptions(allLeads, stateSel.value); citySel.value=''; applyFilters(); });
-    citySel.addEventListener('change', applyFilters);
-    onlyOpen.addEventListener('change', applyFilters);
+    if (!res.ok) {
+      const msg = typeof body === "object" ? (body.error || body.message || JSON.stringify(body)) : (body || res.status);
+      throw new Error(`Apps Script HTTP ${res.status}: ${msg}`);
+    }
 
-    init();
-  });
+    // Expect { ok: true } from doPost
+    if (typeof body === "object") {
+      if (body && body.ok === true) return body;
+      const msg = body.error || body.message || JSON.stringify(body);
+      throw new Error(`Apps Script: ${msg}`);
+    }
+
+    // Non-JSON but OK: accept as success
+    return { ok: true, raw: body };
+  }
+
+  async function pingApi(){
+    try{
+      const res = await fetch(CONFIG.APPS_SCRIPT_URL, { method: "GET", cache: "no-store" });
+      const text = await res.text();
+      lastSubmit.innerHTML = `<span class="ok">Ping ${res.status}</span> – first 120 chars:<br><code>${escapeHTML(text.slice(0,120))}</code>`;
+    }catch(err){
+      lastSubmit.innerHTML = `<span class="err">Ping failed:</span> ${escapeHTML(err.message)}`;
+    }
+  }
+  // --------------------------------------------
+
+  async function handleSubmit(lead, rowEl){
+    const sel = rowEl.querySelector('.vendorSel');
+    const qEl = rowEl.querySelector('.vendorQuote');
+    const note = rowEl.querySelector('.note').value.trim();
+    const vendorVal = sel.value;
+    const quote = qEl.value.trim();
+
+    if (!vendorVal){ alert("Select a vendor"); return; }
+    if (!quote || isNaN(+quote)){ alert("Enter a numeric vendor quote"); return; }
+
+    const v = JSON.parse(vendorVal);
+    const out = {
+      // lead props
+      lead_id: lead.lead_id, lead_name: lead.lead_name, lead_address: lead.lead_address,
+      lead_city: lead.lead_city, lead_subcity: lead.lead_subcity, lead_state: lead.lead_state,
+      lead_ticket: lead.lead_ticket,
+      // vendor + quote
+      vendor_id: v.vendor_id, vendor_name: v.vendor_name, vendor_quote: quote,
+      vendor_subcity: v.vendor_subcity, vendor_city: v.vendor_city, vendor_address: v.vendor_address,
+      note
+    };
+
+    try{
+      setStatus("Submitting to Google Sheet…");
+      const r = await submitToAppsScript(out);
+      lastSubmit.innerHTML = `<span class="ok">Saved</span> at ${new Date().toLocaleString()}`;
+      setStatus("Ready.");
+    }catch(err){
+      console.error(err);
+      lastSubmit.innerHTML = `<span class="err">Submission failed:</span> ${escapeHTML(err.message)}`;
+      setStatus("Ready.");
+    }
+
+    qEl.value = "";
+    rowEl.querySelector('.note').value = "";
+    sel.selectedIndex = 0;
+  }
+
+  init();
   </script>
 </body>
 </html>
