@@ -37,7 +37,7 @@
   </style>
 </head>
 <body>
-    <header>
+  <header>
     <div class="title">Leads (Open) & Vendor Quotes</div>
     <div id="status">Ready.</div>
     <button id="reloadBtn" title="Reload CSVs">Reload</button>
@@ -66,27 +66,27 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <!-- Panic overlay -->
+  <!-- Panic overlay: keep tiny and self-contained -->
   <script>
   (function(){
     function paint(msg, src, line, col, err){
       var box=document.createElement('pre');
-      box.style.cssText="position:fixed;inset:12px;z-index:99999;background:#1b1b1b;color:#fff;border:1px solid #444;padding:12px;overflow:auto;max-height:90vh;white-space:pre-wrap";
-      box.textContent=["\uD83D\uDD25 JS error:", msg||"", src?("at "+src+":"+(line||0)+":"+(col||0)):"", (err&&err.stack)||""].filter(Boolean).join("\n");
+      box.style.cssText='position:fixed;inset:12px;z-index:99999;background:#1b1b1b;color:#fff;border:1px solid #444;padding:12px;overflow:auto;max-height:90vh;white-space:pre-wrap';
+      box.textContent=['\uD83D\uDD25 JS error:', msg||'', src?('at '+src+':'+(line||0)+':'+(col||0)):'', (err&&err.stack)||''].filter(Boolean).join('\n');
       document.body.appendChild(box);
     }
     window.addEventListener('error', function(e){ paint(e.message,e.filename,e.lineno,e.colno,e.error); }, { once:true });
-    window.addEventListener('unhandledrejection', function(e){ paint(String((e.reason&&e.reason.stack)||e.reason||"Unhandled promise rejection")); }, { once:true });
+    window.addEventListener('unhandledrejection', function(e){ paint(String((e.reason&&e.reason.stack)||e.reason||'Unhandled promise rejection')); }, { once:true });
   })();
   </script>
 
   <script>
-  document.addEventListener("DOMContentLoaded", function(){
+  document.addEventListener('DOMContentLoaded', function(){
     var CONFIG = {
-      CSV_BASE: "", // e.g. "/assets/" or full origin like "https://your.site/"
-      LEADS_CSV: "HTML.csv",
-      VENDORS_CSV: "vendor.csv",
-      APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyXHyVsCVqeZpP7wuteH232xvSVdkwcfkVN0nN1vx4AS1U0ZVwitEqACX2wvGbnSDo/exec"
+      CSV_BASE: '',
+      LEADS_CSV: 'HTML.csv',
+      VENDORS_CSV: 'vendor.csv',
+      APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbyXHyVsCVqeZpP7wuteH232xvSVdkwcfkVN0nN1vx4AS1U0ZVwitEqACX2wvGbnSDo/exec'
     };
 
     var statusBox   = document.getElementById('status');
@@ -109,19 +109,19 @@
     }
 
     function escapeHTML(s){
-      s = s || "";
+      s = s || '';
       return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]; });
     }
 
     function urlFor(path){
       if (/^https?:/i.test(path)) return path;
-      return (CONFIG.CSV_BASE || "") + path;
+      return (CONFIG.CSV_BASE || '') + path;
     }
 
     // CSV parser
     function parseCSV(text){
-      var rows = [], row = [], i=0, field="", inQuotes=false, c, n=text.length;
-      function pushField(){ row.push(field); field=""; }
+      var rows = [], row = [], i=0, field='', inQuotes=false, c, n=text.length;
+      function pushField(){ row.push(field); field=''; }
       function pushRow(){ rows.push(row); row=[]; }
       while(i<n){
         c = text[i++];
@@ -131,46 +131,44 @@
         } else {
           if(c === '"'){ inQuotes = true; }
           else if(c === ','){ pushField(); }
-          else if(c === '
-'){ }
-          else if(c === '
-'){ pushField(); pushRow(); }
+          else if(c === '\r'){ }
+          else if(c === '\n'){ pushField(); pushRow(); }
           else { field += c; }
         }
       }
       pushField();
-      if(row.length>1 || (row.length===1 && row[0]!=="" )) pushRow();
+      if(row.length>1 || (row.length===1 && row[0]!=='' )) pushRow();
 
       if(rows.length===0) return { headers:[], rows:[] };
       var headers = rows.shift().map(function(h){ return h.trim(); });
       var objs = rows.map(function(r){
-        var o={}; for(var j=0;j<headers.length;j++){ o[headers[j]]=(r[j]||"").trim(); }
+        var o={}; for(var j=0;j<headers.length;j++){ o[headers[j]]=(r[j]||'').trim(); }
         return o;
       });
       return { headers:headers, rows:objs };
     }
 
     function fetchCSV(path){
-      var url = urlFor(path) + "?_ts=" + Date.now();
-      return fetch(url, { cache:"no-store" })
+      var url = urlFor(path) + '?_ts=' + Date.now();
+      return fetch(url, { cache:'no-store' })
         .then(function(res){
-          if(!res.ok) throw new Error("HTTP " + res.status + " for " + url);
+          if(!res.ok) throw new Error('HTTP ' + res.status + ' for ' + url);
           return res.text();
         })
         .then(parseCSV)
         .catch(function(err){
-          throw new Error("CSV fetch failed for " + url + ": " + err.message);
+          throw new Error('CSV fetch failed for ' + url + ': ' + err.message);
         });
     }
 
     function setStatus(count, total){
-      statusBox.textContent = "Showing " + count + " of " + total + " open leads.";
+      statusBox.textContent = 'Showing ' + count + ' of ' + total + ' open leads.';
     }
 
     function uniqueSorted(arr){
       var seen = Object.create(null), out = [];
       for(var i=0;i<arr.length;i++){
-        var v=(arr[i]||"").trim(); if(!v) continue;
+        var v=(arr[i]||'').trim(); if(!v) continue;
         if(!seen[v]){ seen[v]=1; out.push(v); }
       }
       out.sort(function(a,b){ return a.localeCompare(b); });
@@ -184,7 +182,7 @@
     }
 
     function populateCityOptions(rows, state){
-      var source = state ? rows.filter(function(r){ return (r.lead_state||"") === state; }) : rows;
+      var source = state ? rows.filter(function(r){ return (r.lead_state||'') === state; }) : rows;
       var cities = uniqueSorted(source.map(function(r){ return r.lead_city; }));
       citySel.innerHTML = '<option value="">All cities</option>' +
         cities.map(function(c){ return '<option value="'+escapeHTML(c)+'">'+escapeHTML(c)+'</option>'; }).join('');
@@ -192,12 +190,12 @@
 
     function renderLeadTable(leads){
       var tbody = document.getElementById('leadBody');
-      tbody.innerHTML = "";
+      tbody.innerHTML = '';
       if(!leads || leads.length===0){
-        emptyState.style.display = "block";
+        emptyState.style.display = 'block';
         return;
       }
-      emptyState.style.display = "none";
+      emptyState.style.display = 'none';
 
       for(var i=0;i<leads.length;i++){
         var r = leads[i];
@@ -229,8 +227,8 @@
       var selCity  = citySel.value;
 
       filteredLeads = allOpenLeads.filter(function(r){
-        var stateOk = !selState || (r.lead_state||"") === selState;
-        var cityOk  = !selCity  || (r.lead_city||"")  === selCity;
+        var stateOk = !selState || (r.lead_state||'') === selState;
+        var cityOk  = !selCity  || (r.lead_city||'')  === selCity;
         return stateOk && cityOk;
       });
       renderLeadTable(filteredLeads);
@@ -240,71 +238,70 @@
     // Submit to Apps Script (simple CORS via text/plain)
     function submitIssue(out){
       fetch(CONFIG.APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(out)
       })
-      .then(async (res) => {
-        const ct = res.headers.get("content-type") || "";
-        let body;
-        if (ct.includes("application/json")) {
-          body = await res.json().catch(() => ({}));
+      .then(async function(res){
+        var ct = res.headers.get('content-type') || '';
+        var body;
+        if (ct.includes('application/json')) {
+          try { body = await res.json(); } catch(e) { body = {}; }
         } else {
           body = await res.text();
         }
-        return { ok: res.ok, status: res.status, body };
+        return { ok: res.ok, status: res.status, body: body };
       })
-      .then((r) => {
-        if (typeof r.body === "object") {
+      .then(function(r){
+        if (typeof r.body === 'object') {
           if (r.body && r.body.ok === true) {
-            lastSubmit.textContent = "Saved to Google Sheet.";
-            showToast("Saved!");
+            lastSubmit.textContent = 'Saved to Google Sheet.';
+            showToast('Saved!');
             return;
           }
-          const msg = r.body.error || r.body.message || JSON.stringify(r.body);
-          throw new Error("Server said ("+r.status+"): " + msg);
+          var msg = r.body.error || r.body.message || JSON.stringify(r.body);
+          throw new Error('Server said ('+r.status+'): ' + msg);
         } else {
           if (r.ok && r.body.trim().length === 0) {
-            lastSubmit.textContent = "Saved.";
-            showToast("Saved!");
+            lastSubmit.textContent = 'Saved.';
+            showToast('Saved!');
             return;
           }
-          throw new Error("Server did not return JSON ("+r.status+") from Apps Script. First 200 chars:
-" + r.body.slice(0,200));
+          throw new Error('Server did not return JSON ('+r.status+'). First 200 chars:\n' + r.body.slice(0,200));
         }
       })
-      .catch((err) => {
+      .catch(function(err){
         console.error(err);
-        errorState.style.display = "block";
-        errorState.textContent = "Submission failed: " + err.message;
-        showToast("Submit failed. See error box.");
+        errorState.style.display = 'block';
+        errorState.textContent = 'Submission failed: ' + err.message;
+        showToast('Submit failed. See error box.');
       });
     }
 
     function handleSubmit(lead, rowEl){
       var qEl = rowEl.querySelector('.vendorQuote');
-      var quote = (qEl.value||"").trim();
-      if(!quote){ showToast("Enter a quote"); return; }
+      var quote = (qEl.value||'').trim();
+      if(!quote){ showToast('Enter a quote'); return; }
       var out = {
         lead_id: lead.lead_id, lead_name: lead.lead_name, lead_address: lead.lead_address,
         lead_city: lead.lead_city, lead_subcity: lead.lead_subcity, lead_state: lead.lead_state,
         lead_ticket: lead.lead_ticket, note: quote
       };
       submitIssue(out);
-      qEl.value = "";
+      qEl.value = '';
     }
 
     function init(){
       if (location.protocol === 'file:'){
         errorState.style.display = 'block';
-        errorState.textContent = "Load failed: This page is opened via file:// which blocks fetch(). Serve it over http(s) or set CONFIG.CSV_BASE to an absolute URL.";
-        statusBox.textContent = "Blocked by browser security (file://)";
+        errorState.textContent = 'Load failed: This page is opened via file:// which blocks fetch(). Serve it over http(s) or set CONFIG.CSV_BASE to an absolute URL.';
+        statusBox.textContent = 'Blocked by browser security (file://)';
         return;
       }
 
-      statusBox.textContent = "Loading…";
-      emptyState.style.display = "none";
-      errorState.style.display = "none";
+      statusBox.textContent = 'Loading…';
+      emptyState.style.display = 'none';
+      errorState.style.display = 'none';
 
       Promise.all([ fetchCSV(CONFIG.LEADS_CSV), fetchCSV(CONFIG.VENDORS_CSV) ])
         .then(function(results){
@@ -312,23 +309,23 @@
           vendors = vendorCSV.rows;
 
           allOpenLeads = leadCSV.rows.filter(function(r){
-            return (r.lead_ticket||"").toLowerCase() === "open";
+            return (r.lead_ticket||'').toLowerCase() === 'open';
           });
 
           populateStateOptions(allOpenLeads);
-          populateCityOptions(allOpenLeads, "");
+          populateCityOptions(allOpenLeads, '');
 
           filteredLeads = allOpenLeads.slice();
           renderLeadTable(filteredLeads);
           setStatus(filteredLeads.length, allOpenLeads.length);
 
-          statusBox.textContent = "Loaded " + allOpenLeads.length + " open leads.";
+          statusBox.textContent = 'Loaded ' + allOpenLeads.length + ' open leads.';
         })
         .catch(function(err){
           console.error(err);
-          statusBox.textContent = "Error loading data.";
-          errorState.style.display = "block";
-          errorState.textContent = "Load failed: " + err.message;
+          statusBox.textContent = 'Error loading data.';
+          errorState.style.display = 'block';
+          errorState.textContent = 'Load failed: ' + err.message;
         });
     }
 
@@ -336,17 +333,17 @@
     var reloadBtn = document.getElementById('reloadBtn');
     if(reloadBtn) reloadBtn.addEventListener('click', function(){
       init();
-      stateSel.value = "";
-      populateCityOptions(allOpenLeads, "");
-      citySel.value = "";
+      stateSel.value = '';
+      populateCityOptions(allOpenLeads, '');
+      citySel.value = '';
       applyFilters();
     });
 
     var clearBtn = document.getElementById('clearFilters');
     if(clearBtn) clearBtn.addEventListener('click', function(){
-      stateSel.value = "";
-      populateCityOptions(allOpenLeads, "");
-      citySel.value = "";
+      stateSel.value = '';
+      populateCityOptions(allOpenLeads, '');
+      citySel.value = '';
       applyFilters();
     });
 
@@ -355,20 +352,19 @@
       fetch(CONFIG.APPS_SCRIPT_URL, { method:'GET' })
         .then(function(r){ return r.text().then(function(t){ return {status:r.status, body:t}; }); })
         .then(function(r){
-          showToast("API " + r.status);
-          lastSubmit.textContent = "Ping response (first 200 chars):
-" + r.body.slice(0,200);
+          showToast('API ' + r.status);
+          lastSubmit.textContent = 'Ping response (first 200 chars):\n' + r.body.slice(0,200);
         })
         .catch(function(err){
-          showToast("Ping failed");
-          lastSubmit.textContent = "Ping failed: " + err.message;
+          showToast('Ping failed');
+          lastSubmit.textContent = 'Ping failed: ' + err.message;
         });
     });
 
     // Filters
     stateSel.addEventListener('change', function(){
       populateCityOptions(allOpenLeads, stateSel.value);
-      citySel.value = "";
+      citySel.value = '';
       applyFilters();
     });
     citySel.addEventListener('change', applyFilters);
