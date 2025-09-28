@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Leads & Vendor Quotes</title>
+  <title>Leads (Open) & Vendor Quotes</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
@@ -15,32 +15,33 @@
     *{box-sizing:border-box}
     body{margin:0;font-family:var(--font);color:var(--ink);background:var(--bg)}
     header{padding:20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-    .title{font-size:24px;font-weight:bold;margin-right:auto}
+    .title{font-size:24px;font-weight:700;margin-right:auto}
     button,select{background:#121a2b;color:var(--ink);border:1px solid var(--border);
       border-radius:10px;padding:8px 10px;cursor:pointer}
     button:hover{border-color:var(--accent)}
     .wrap{max-width:1200px;margin:20px auto;padding:20px}
-    .panel{background:var(--panel);border-radius:var(--radius);padding:16px}
+    .panel{background:var(--panel);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
     table{width:100%;border-collapse:collapse;margin-top:16px}
     th,td{padding:10px;border:1px solid var(--border-soft);text-align:left}
-    thead th{background:#0d1526;color:#bcd;position:sticky;top:0}
+    thead th{background:#0d1526;color:#bcd;position:sticky;top:0;z-index:1}
     .pill{padding:2px 8px;border-radius:8px;background:#1b2238;border:1px solid var(--border)}
     .toast{position:fixed;right:16px;bottom:16px;background:var(--panel);padding:10px 14px;
       border-radius:8px;border:1px solid var(--border);display:none;box-shadow:var(--shadow)}
     .toast.show{display:block}
     .muted{color:var(--muted)}
-    input[type="number"]{width:120px;background:#0e1526;border:1px solid var(--border);
+    input[type="number"]{width:140px;background:#0e1526;border:1px solid var(--border);
       color:var(--ink);border-radius:8px;padding:6px 8px}
     #status{font-size:14px;color:var(--muted)}
     #emptyState,#errorState{padding:12px;border:1px dashed var(--border);border-radius:10px;margin-top:10px}
+    .row-actions{display:flex;gap:8px;align-items:center}
   </style>
 </head>
 <body>
   <header>
     <div class="title">Leads (Open) & Vendor Quotes</div>
     <div id="status">Ready.</div>
-    <button id="reloadBtn">Reload CSVs</button>
-    <button id="clearFilters">Clear</button>
+    <button id="reloadBtn" title="Reload CSVs">Reload</button>
+    <button id="clearFilters" title="Clear filters">Clear</button>
     <select id="stateFilter"><option value="">All states</option></select>
     <select id="cityFilter"><option value="">All cities</option></select>
   </header>
@@ -49,7 +50,7 @@
     <div id="emptyState" style="display:none;">No leads match your filters.</div>
     <div id="errorState" style="display:none;">Could not load CSVs.</div>
 
-    <table>
+    <table aria-label="Open leads">
       <thead>
         <tr>
           <th>Lead ID</th><th>Name</th><th>Address</th><th>City</th>
@@ -62,7 +63,7 @@
     <div id="lastSubmit" class="muted" style="margin-top:10px;"></div>
   </div>
 
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <!-- Panic overlay -->
   <script>
@@ -70,7 +71,7 @@
     function paint(msg, src, line, col, err){
       var box=document.createElement('pre');
       box.style.cssText="position:fixed;inset:12px;z-index:99999;background:#1b1b1b;color:#fff;border:1px solid #444;padding:12px;overflow:auto;max-height:90vh;white-space:pre-wrap";
-      box.textContent=["🔥 JS error:", msg||"", src?("at "+src+":"+(line||0)+":"+(col||0)):"", (err&&err.stack)||""].filter(Boolean).join("\n");
+      box.textContent=["\uD83D\uDD25 JS error:", msg||"", src?("at "+src+":"+(line||0)+":"+(col||0)):"", (err&&err.stack)||""].filter(Boolean).join("\n");
       document.body.appendChild(box);
     }
     window.addEventListener('error', function(e){ paint(e.message,e.filename,e.lineno,e.colno,e.error); }, { once:true });
@@ -83,6 +84,7 @@
     var CONFIG = {
       LEADS_CSV: "HTML.csv",
       VENDORS_CSV: "vendor.csv",
+      // IMPORTANT: keep this as the /exec URL of your deployed Web App
       APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyXHyVsCVqeZpP7wuteH232xvSVdkwcfkVN0nN1vx4AS1U0ZVwitEqACX2wvGbnSDo/exec"
     };
 
@@ -102,15 +104,15 @@
     function showToast(msg){
       toastEl.textContent = msg;
       toastEl.classList.add('show');
-      setTimeout(function(){ toastEl.classList.remove('show'); }, 2500);
+      setTimeout(function(){ toastEl.classList.remove('show'); }, 2000);
     }
 
     function escapeHTML(s){
       s = s || "";
-      return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; });
+      return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]; });
     }
 
-    // CSV parser
+    // CSV parser (robust for quoted fields)
     function parseCSV(text){
       var rows = [], row = [], i=0, field="", inQuotes=false, c, n=text.length;
       function pushField(){ row.push(field); field=""; }
@@ -197,8 +199,10 @@
           '<td>'+escapeHTML(r.lead_state)+'</td>'+
           '<td><span class="pill">'+escapeHTML(r.lead_ticket)+'</span></td>'+
           '<td>'+
-            '<input type="number" class="vendorQuote" placeholder="Quote (₹)" /> '+
-            '<button class="submitBtn">Submit</button>'+
+            '<div class="row-actions">'+
+              '<input type="number" class="vendorQuote" placeholder="Quote (₹)" />'+
+              '<button class="submitBtn">Submit</button>'+
+            '</div>'+
           '</td>';
         (function(lead, rowEl){
           var btn = tr.querySelector('.submitBtn');
@@ -221,11 +225,11 @@
       setStatus(filteredLeads.length, allOpenLeads.length);
     }
 
-    // ✅ FIXED: just the function, no nested <script> tags
+    // Submit to Apps Script (make CORS "simple" by using text/plain)
     function submitIssue(out){
       fetch(CONFIG.APPS_SCRIPT_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify(out)
       })
       .then(async (res) => {
@@ -248,6 +252,13 @@
           const msg = r.body.error || r.body.message || JSON.stringify(r.body);
           throw new Error("Server said ("+r.status+"): " + msg);
         } else {
+          // Non-JSON response
+          if (r.ok && r.body.trim().length === 0) {
+            // Some deployments may return empty 200/204; treat as success
+            lastSubmit.textContent = "Saved.";
+            showToast("Saved!");
+            return;
+          }
           throw new Error("Server did not return JSON ("+r.status+"). First 200 chars:\n" + r.body.slice(0,200));
         }
       })
@@ -263,7 +274,6 @@
       var qEl = rowEl.querySelector('.vendorQuote');
       var quote = (qEl.value||"").trim();
       if(!quote){ showToast("Enter a quote"); return; }
-
       var out = {
         lead_id: lead.lead_id, lead_name: lead.lead_name, lead_address: lead.lead_address,
         lead_city: lead.lead_city, lead_subcity: lead.lead_subcity, lead_state: lead.lead_state,
