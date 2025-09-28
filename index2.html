@@ -107,6 +107,7 @@
 
     // CSV robust parse (handles quotes)
     function parseCSV(text){
+      // First try a robust parser for quoted fields
       var rows = [], row = [], i=0, field='', inQuotes=false, c, n=text.length;
       function pushField(){ row.push(field); field=''; }
       function pushRow(){ rows.push(row); row=[]; }
@@ -127,15 +128,21 @@
       }
       pushField();
       if(row.length>1 || (row.length===1 && row[0]!=='' )) pushRow();
-      if(rows.length===0) return { headers:[], rows:[] };
+
+      if(rows.length===0){
+        return { headers:[], rows:[] };
+      }
       var headers = rows.shift();
-      // normalize headers -> snake_case
+      // If it looks like we only parsed a single mega-row, fall back to a simpler splitter
+      if (rows.length === 0 && (headers.join(',').indexOf('
+') !== -1 || headers.join(',').indexOf('
+') !== -1)){
+        return parseCSVFallback(text);
+      }
       headers = headers.map(function(h){ return String(h||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,''); });
       var objs = rows.map(function(r){ var o={}; for(var j=0;j<headers.length;j++){ o[headers[j]]=(r[j]||'').trim(); } return o; });
-      // header aliases
       objs = objs.map(function(o){
-        var m = Object.create(null);
-        for (var k in o){ m[k]=o[k]; }
+        var m = Object.create(null); for (var k in o){ m[k]=o[k]; }
         m.lead_id     = m.lead_id||m.id||m.leadid||'';
         m.lead_name   = m.lead_name||m.name||m.lead||'';
         m.lead_address= m.lead_address||m.address||'';
@@ -148,11 +155,26 @@
       return { headers:headers, rows:objs };
     }
 
+    function parseCSVFallback(text){
+      // Very forgiving fallback: split on any newline, simple comma split
+      var lines = text.replace(/
+/g,'
+').replace(/
+/g,'
+').split('
+').filter(function(l){return l.length>0;});
+      if (lines.length === 0) return { headers:[], rows:[] };
+      var headers = lines.shift().split(',').map(function(h){return h.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');});
+      var rows = lines.map(function(line){ var cols = line.split(','); var o={}; for (var j=0;j<headers.length;j++){ o[headers[j]] = (cols[j]||'').trim(); } return o; });
+      rows = rows.map(function(m){ m.lead_id=m.lead_id||m.id||m.leadid||''; m.lead_name=m.lead_name||m.name||m.lead||''; m.lead_address=m.lead_address||m.address||''; m.lead_city=m.lead_city||m.city||''; m.lead_subcity=m.lead_subcity||m.subcity||m.area||''; m.lead_state=m.lead_state||m.state||''; m.lead_ticket=(m.lead_ticket||m.ticket||m.status||'').trim(); return m; });
+      return { headers:headers, rows:rows };
+    }
+
     function fetchCSV(path){
       var url = urlFor(path) + '?_ts=' + Date.now();
       return fetch(url, { cache:'no-store' })
         .then(function(res){ if(!res.ok) throw new Error('HTTP ' + res.status + ' for ' + url); return res.text(); })
-        .then(parseCSV)
+        .then(function(txt){ var parsed = parseCSV(txt); if (parsed.rows.length===0){ console.warn('Parsed 0 rows for', url); } return parsed; })
         .catch(function(err){ throw new Error('CSV fetch failed for ' + url + ': ' + err.message); });
     }
 
