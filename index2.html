@@ -64,7 +64,7 @@
 
   <div id="toast" class="toast"></div>
 
-  <!-- Panic overlay: shows the first runtime error on the page -->
+  <!-- Panic overlay -->
   <script>
   (function(){
     function paint(msg, src, line, col, err){
@@ -110,7 +110,7 @@
       return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; });
     }
 
-    // CSV parser (handles quotes & commas)
+    // CSV parser
     function parseCSV(text){
       var rows = [], row = [], i=0, field="", inQuotes=false, c, n=text.length;
       function pushField(){ row.push(field); field=""; }
@@ -123,7 +123,7 @@
         } else {
           if(c === '"'){ inQuotes = true; }
           else if(c === ','){ pushField(); }
-          else if(c === '\r'){ /* ignore */ }
+          else if(c === '\r'){ }
           else if(c === '\n'){ pushField(); pushRow(); }
           else { field += c; }
         }
@@ -221,48 +221,43 @@
       setStatus(filteredLeads.length, allOpenLeads.length);
     }
 
-    <script>
-function submitIssue(out){
-  fetch("https://script.google.com/macros/s/AKfycbyXHyVsCVqeZpP7wuteH232xvSVdkwcfkVN0nN1vx4AS1U0ZVwitEqACX2wvGbnSDo/exec", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(out)
-  })
-  .then(async (res) => {
-    const ct = res.headers.get("content-type") || "";
-    let body;
-    if (ct.includes("application/json")) {
-      body = await res.json().catch(() => ({}));
-    } else {
-      body = await res.text(); // <- if you were about to get '<html...'
+    // ✅ FIXED: just the function, no nested <script> tags
+    function submitIssue(out){
+      fetch(CONFIG.APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(out)
+      })
+      .then(async (res) => {
+        const ct = res.headers.get("content-type") || "";
+        let body;
+        if (ct.includes("application/json")) {
+          body = await res.json().catch(() => ({}));
+        } else {
+          body = await res.text();
+        }
+        return { ok: res.ok, status: res.status, body };
+      })
+      .then((r) => {
+        if (typeof r.body === "object") {
+          if (r.body && r.body.ok === true) {
+            lastSubmit.textContent = "Saved to Google Sheet.";
+            showToast("Saved!");
+            return;
+          }
+          const msg = r.body.error || r.body.message || JSON.stringify(r.body);
+          throw new Error("Server said ("+r.status+"): " + msg);
+        } else {
+          throw new Error("Server did not return JSON ("+r.status+"). First 200 chars:\n" + r.body.slice(0,200));
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        errorState.style.display = "block";
+        errorState.textContent = "Submission failed: " + err.message;
+        showToast("Submit failed. See error box.");
+      });
     }
-    return { ok: res.ok, status: res.status, body };
-  })
-  .then((r) => {
-    // Accept only {ok:true} JSON
-    if (typeof r.body === "object") {
-      if (r.body && r.body.ok === true) {
-        lastSubmit.textContent = "Saved to Google Sheet.";
-        showToast("Saved!");
-        return;
-      }
-      const msg = r.body.error || r.body.message || JSON.stringify(r.body);
-      throw new Error(`Server said (${r.status}): ${msg}`);
-    } else {
-      // Got HTML/text; surface it
-      throw new Error(`Server did not return JSON (${r.status}). First 200 chars:\n` + r.body.slice(0,200));
-    }
-  })
-  .catch((err) => {
-    console.error(err);
-    errorState.style.display = "block";
-    errorState.textContent = "Submission failed: " + err.message;
-    showToast("Submit failed. See error box.");
-  });
-}
-</script>
-
-
 
     function handleSubmit(lead, rowEl){
       var qEl = rowEl.querySelector('.vendorQuote');
