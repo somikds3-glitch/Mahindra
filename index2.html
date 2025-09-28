@@ -220,30 +220,40 @@
       renderLeadTable(filteredLeads);
       setStatus(filteredLeads.length, allOpenLeads.length);
     }
-
-    function submitIssue(out){
-      // send the raw JSON to your Apps Script web app (which appends to the sheet)
-      fetch(CONFIG.APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(out)
-      })
-      .then(function(res){ return res.json(); })
-      .then(function(r){
-        if(!r || r.ok !== true){
-          var msg = (r && (r.error || r.message)) || "Append failed";
-          throw new Error(msg);
-        }
-        lastSubmit.textContent = "Saved to Google Sheet.";
-        showToast("Saved!");
-      })
-      .catch(function(err){
-        console.error(err);
-        errorState.style.display = "block";
-        errorState.textContent = "Submission failed: " + err.message;
-        showToast("Submit failed. See error box.");
-      });
+<script>
+function submitIssue(out){
+  fetch("https://script.google.com/macros/s/AKfycbyXHyVsCVqeZpP7wuteH232xvSVdkwcfkVN0nN1vx4AS1U0ZVwitEqACX2wvGbnSDo/exec", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(out)
+  })
+  .then(async (res) => {
+    const ct = res.headers.get("content-type") || "";
+    // Try to parse JSON if possible; otherwise read text so we can surface a useful error
+    const body = ct.includes("application/json") ? await res.json().catch(() => ({})) : await res.text();
+    return { ok: res.ok, status: res.status, body };
+  })
+  .then((r) => {
+    // Accept either {ok:true} JSON or a truthy 'ok' flag; otherwise show diagnostic
+    const ok = typeof r.body === "object" ? r.body.ok === true : false;
+    if (!r.ok || !ok) {
+      const msg = typeof r.body === "object"
+        ? (r.body.error || r.body.message || JSON.stringify(r.body))
+        : r.body?.slice(0, 300) || "Unknown server response";
+      throw new Error(`Server said (${r.status}): ${msg}`);
     }
+    lastSubmit.textContent = "Saved to Google Sheet.";
+    showToast("Saved!");
+  })
+  .catch((err) => {
+    console.error(err);
+    errorState.style.display = "block";
+    errorState.textContent = "Submission failed: " + err.message;
+    showToast("Submit failed. See error box.");
+  });
+}
+</script>
+
 
     function handleSubmit(lead, rowEl){
       var qEl = rowEl.querySelector('.vendorQuote');
