@@ -72,7 +72,8 @@
     function paint(msg, src, line, col, err){
       var box=document.createElement('pre');
       box.style.cssText='position:fixed;inset:12px;z-index:99999;background:#1b1b1b;color:#fff;border:1px solid #444;padding:12px;overflow:auto;max-height:90vh;white-space:pre-wrap';
-      box.textContent=['\uD83D\uDD25 JS error:', msg||'', src?('at '+src+':'+(line||0)+':'+(col||0)):'', (err&&err.stack)||''].filter(Boolean).join('\n');
+      box.textContent=['🔥 JS error:', msg||'', src?('at '+src+':'+(line||0)+':'+(col||0)):'', (err&&err.stack)||''].filter(Boolean).join('
+');
       document.body.appendChild(box);
     }
     window.addEventListener('error', function(e){ paint(e.message,e.filename,e.lineno,e.colno,e.error); }, { once:true });
@@ -86,7 +87,7 @@
       CSV_BASE: '',
       LEADS_CSV: 'HTML.csv',
       VENDORS_CSV: 'vendor.csv',
-      APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbyXHyVsCVqeZpP7wuteH232xvSVdkwcfkVN0nN1vx4AS1U0ZVwitEqACX2wvGbnSDo/exec'
+      APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbw6qlBeI-BLoZUZR3uua2RV_vj8DvfDe63R_Fu4FpyP50Rej4cPZXJk9NQ1JTPCkNv7/exec'
     };
 
     var statusBox   = document.getElementById('status');
@@ -131,8 +132,10 @@
         } else {
           if(c === '"'){ inQuotes = true; }
           else if(c === ','){ pushField(); }
-          else if(c === '\r'){ }
-          else if(c === '\n'){ pushField(); pushRow(); }
+          else if(c === '
+'){ }
+          else if(c === '
+'){ pushField(); pushRow(); }
           else { field += c; }
         }
       }
@@ -267,7 +270,8 @@
             showToast('Saved!');
             return;
           }
-          throw new Error('Server did not return JSON ('+r.status+'). First 200 chars:\n' + r.body.slice(0,200));
+          throw new Error('Server did not return JSON ('+r.status+'). First 200 chars:
+' + r.body.slice(0,200));
         }
       })
       .catch(function(err){
@@ -353,7 +357,8 @@
         .then(function(r){ return r.text().then(function(t){ return {status:r.status, body:t}; }); })
         .then(function(r){
           showToast('API ' + r.status);
-          lastSubmit.textContent = 'Ping response (first 200 chars):\n' + r.body.slice(0,200);
+          lastSubmit.textContent = 'Ping response (first 200 chars):
+' + r.body.slice(0,200);
         })
         .catch(function(err){
           showToast('Ping failed');
