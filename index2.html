@@ -39,6 +39,7 @@
       <button id="reloadBtn" title="Reload CSVs">Reload</button>
       <button id="clearFilters" title="Clear filters">Clear</button>
       <button id="pingBtn" title="Ping Apps Script">Ping API</button>
+      <button id="debugBtn" title="Show CSV debug">Debug</button>
       <select id="stateFilter"><option value="">All states</option></select>
       <select id="cityFilter"><option value="">All cities</option></select>
     </div>
@@ -64,7 +65,8 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script>
-  // Panic overlay kept minimal
+  // Minimal panic overlay — uses proper 
+, no stray newlines in strings
   (function(){
     function paint(msg, src, line, col, err){
       var box=document.createElement('pre');
@@ -81,9 +83,9 @@
   <script>
   document.addEventListener('DOMContentLoaded', function(){
     var CONFIG = {
-      CSV_BASE: './',
-      LEADS_CSV: 'HTML.csv',
-      VENDORS_CSV: 'vendor.csv',
+      CSV_BASE: './',                 // folder where the CSVs live
+      LEADS_CSV: 'HTML.csv',          // case-sensitive
+      VENDORS_CSV: 'vendor.csv',      // case-sensitive
       APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbw6qlBeI-BLoZUZR3uua2RV_vj8DvfDe63R_Fu4FpyP50Rej4cPZXJk9NQ1JTPCkNv7/exec'
     };
 
@@ -105,22 +107,22 @@
     function escapeHTML(s){ s = s || ''; return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]; }); }
     function urlFor(path){ if (/^https?:/i.test(path)) return path; return (CONFIG.CSV_BASE || '') + path; }
 
-    // CSV robust parse (handles quotes)
+    // Robust CSV parser (handles quotes, commas, CR/LF)
     function parseCSV(text){
-      // First try a robust parser for quoted fields
       var rows = [], row = [], i=0, field='', inQuotes=false, c, n=text.length;
       function pushField(){ row.push(field); field=''; }
       function pushRow(){ rows.push(row); row=[]; }
       while(i<n){
         c = text[i++];
         if(inQuotes){
-          if(c === '"'){ if(i<n && text[i] === '"'){ field += '"'; i++; } else { inQuotes = false; } }
-          else { field += c; }
+          if(c === '"'){
+            if(i<n && text[i] === '"'){ field += '"'; i++; } else { inQuotes = false; }
+          } else { field += c; }
         } else {
           if(c === '"'){ inQuotes = true; }
           else if(c === ','){ pushField(); }
           else if(c === '
-'){ }
+'){ /* ignore */ }
           else if(c === '
 '){ pushField(); pushRow(); }
           else { field += c; }
@@ -129,18 +131,16 @@
       pushField();
       if(row.length>1 || (row.length===1 && row[0]!=='' )) pushRow();
 
-      if(rows.length===0){
-        return { headers:[], rows:[] };
-      }
+      if(rows.length===0) return { headers:[], rows:[] };
       var headers = rows.shift();
-      // If it looks like we only parsed a single mega-row, fall back to a simpler splitter
-      if (rows.length === 0 && (headers.join(',').indexOf('
-') !== -1 || headers.join(',').indexOf('
-') !== -1)){
+      // If nothing but a mega-line was captured, fall back
+      if (rows.length === 0 && headers.join(',').indexOf('
+') !== -1){
         return parseCSVFallback(text);
       }
       headers = headers.map(function(h){ return String(h||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,''); });
       var objs = rows.map(function(r){ var o={}; for(var j=0;j<headers.length;j++){ o[headers[j]]=(r[j]||'').trim(); } return o; });
+      // Normalize to expected keys
       objs = objs.map(function(o){
         var m = Object.create(null); for (var k in o){ m[k]=o[k]; }
         m.lead_id     = m.lead_id||m.id||m.leadid||'';
@@ -156,7 +156,6 @@
     }
 
     function parseCSVFallback(text){
-      // Very forgiving fallback: split on any newline, simple comma split
       var lines = text.replace(/
 /g,'
 ').replace(/
@@ -215,7 +214,6 @@
       var selState = stateSel.value; var selCity = citySel.value; var openOnly = !!onlyOpen.checked;
       var base = allLeads.slice();
       if (openOnly){ base = base.filter(function(r){ return ((r.lead_ticket||'').trim().toLowerCase().indexOf('open')===0); }); }
-      // If filtering to OPEN yields 0, show ALL but warn in status
       if (openOnly && base.length===0){ base = allLeads.slice(); setStatus('No OPEN rows detected in CSV. Showing ALL rows.'); }
       shownLeads = base.filter(function(r){ var stateOk=!selState || (r.lead_state||'')===selState; var cityOk=!selCity || (r.lead_city||'')===selCity; return stateOk && cityOk; });
       renderLeadTable(shownLeads);
@@ -252,6 +250,19 @@
     var clearBtn = document.getElementById('clearFilters'); if(clearBtn) clearBtn.addEventListener('click', function(){ stateSel.value=''; populateCityOptions(allLeads, ''); citySel.value=''; applyFilters(); });
     var pingBtn = document.getElementById('pingBtn'); if (pingBtn) pingBtn.addEventListener('click', function(){ fetch(CONFIG.APPS_SCRIPT_URL, { method:'GET' }).then(function(r){ return r.text().then(function(t){ return {status:r.status, body:t}; }); }).then(function(r){ showToast('API ' + r.status); lastSubmit.textContent = 'Ping response (first 200 chars):
 ' + String(r.body).slice(0,200); }).catch(function(err){ showToast('Ping failed'); lastSubmit.textContent = 'Ping failed: ' + err.message; }); });
+    var debugBtn = document.getElementById('debugBtn'); if (debugBtn) debugBtn.addEventListener('click', function(){
+      Promise.all([
+        fetch(urlFor(CONFIG.LEADS_CSV)).then(function(r){return r.text();}).catch(function(e){return 'ERR:'+e.message;}),
+        fetch(urlFor(CONFIG.VENDORS_CSV)).then(function(r){return r.text();}).catch(function(e){return 'ERR:'+e.message;})
+      ]).then(function(pair){
+        var a = pair[0], b = pair[1];
+        lastSubmit.textContent = 'HTML.csv first 200 chars:
+' + String(a).slice(0,200) + '
+
+' + 'vendor.csv first 200 chars:
+' + String(b).slice(0,200);
+      }).catch(function(e){ lastSubmit.textContent = 'Debug failed: '+e.message; });
+    });
 
     // Filters
     stateSel.addEventListener('change', function(){ populateCityOptions(allLeads, stateSel.value); citySel.value=''; applyFilters(); });
