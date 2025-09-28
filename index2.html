@@ -37,11 +37,12 @@
   </style>
 </head>
 <body>
-  <header>
+    <header>
     <div class="title">Leads (Open) & Vendor Quotes</div>
     <div id="status">Ready.</div>
     <button id="reloadBtn" title="Reload CSVs">Reload</button>
     <button id="clearFilters" title="Clear filters">Clear</button>
+    <button id="pingBtn" title="Ping Apps Script">Ping API</button>
     <select id="stateFilter"><option value="">All states</option></select>
     <select id="cityFilter"><option value="">All cities</option></select>
   </header>
@@ -82,9 +83,9 @@
   <script>
   document.addEventListener("DOMContentLoaded", function(){
     var CONFIG = {
+      CSV_BASE: "", // e.g. "/assets/" or full origin like "https://your.site/"
       LEADS_CSV: "HTML.csv",
       VENDORS_CSV: "vendor.csv",
-      // IMPORTANT: keep this as the /exec URL of your deployed Web App
       APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyXHyVsCVqeZpP7wuteH232xvSVdkwcfkVN0nN1vx4AS1U0ZVwitEqACX2wvGbnSDo/exec"
     };
 
@@ -112,7 +113,12 @@
       return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]; });
     }
 
-    // CSV parser (robust for quoted fields)
+    function urlFor(path){
+      if (/^https?:/i.test(path)) return path;
+      return (CONFIG.CSV_BASE || "") + path;
+    }
+
+    // CSV parser
     function parseCSV(text){
       var rows = [], row = [], i=0, field="", inQuotes=false, c, n=text.length;
       function pushField(){ row.push(field); field=""; }
@@ -125,8 +131,10 @@
         } else {
           if(c === '"'){ inQuotes = true; }
           else if(c === ','){ pushField(); }
-          else if(c === '\r'){ }
-          else if(c === '\n'){ pushField(); pushRow(); }
+          else if(c === '
+'){ }
+          else if(c === '
+'){ pushField(); pushRow(); }
           else { field += c; }
         }
       }
@@ -143,12 +151,16 @@
     }
 
     function fetchCSV(path){
-      return fetch(path + "?_ts=" + Date.now(), { cache:"no-store" })
+      var url = urlFor(path) + "?_ts=" + Date.now();
+      return fetch(url, { cache:"no-store" })
         .then(function(res){
-          if(!res.ok) throw new Error("Failed to fetch " + path + " (" + res.status + ")");
+          if(!res.ok) throw new Error("HTTP " + res.status + " for " + url);
           return res.text();
         })
-        .then(parseCSV);
+        .then(parseCSV)
+        .catch(function(err){
+          throw new Error("CSV fetch failed for " + url + ": " + err.message);
+        });
     }
 
     function setStatus(count, total){
@@ -225,7 +237,7 @@
       setStatus(filteredLeads.length, allOpenLeads.length);
     }
 
-    // Submit to Apps Script (make CORS "simple" by using text/plain)
+    // Submit to Apps Script (simple CORS via text/plain)
     function submitIssue(out){
       fetch(CONFIG.APPS_SCRIPT_URL, {
         method: "POST",
@@ -252,14 +264,13 @@
           const msg = r.body.error || r.body.message || JSON.stringify(r.body);
           throw new Error("Server said ("+r.status+"): " + msg);
         } else {
-          // Non-JSON response
           if (r.ok && r.body.trim().length === 0) {
-            // Some deployments may return empty 200/204; treat as success
             lastSubmit.textContent = "Saved.";
             showToast("Saved!");
             return;
           }
-          throw new Error("Server did not return JSON ("+r.status+"). First 200 chars:\n" + r.body.slice(0,200));
+          throw new Error("Server did not return JSON ("+r.status+") from Apps Script. First 200 chars:
+" + r.body.slice(0,200));
         }
       })
       .catch((err) => {
@@ -284,6 +295,13 @@
     }
 
     function init(){
+      if (location.protocol === 'file:'){
+        errorState.style.display = 'block';
+        errorState.textContent = "Load failed: This page is opened via file:// which blocks fetch(). Serve it over http(s) or set CONFIG.CSV_BASE to an absolute URL.";
+        statusBox.textContent = "Blocked by browser security (file://)";
+        return;
+      }
+
       statusBox.textContent = "Loading…";
       emptyState.style.display = "none";
       errorState.style.display = "none";
@@ -330,6 +348,21 @@
       populateCityOptions(allOpenLeads, "");
       citySel.value = "";
       applyFilters();
+    });
+
+    var pingBtn = document.getElementById('pingBtn');
+    if (pingBtn) pingBtn.addEventListener('click', function(){
+      fetch(CONFIG.APPS_SCRIPT_URL, { method:'GET' })
+        .then(function(r){ return r.text().then(function(t){ return {status:r.status, body:t}; }); })
+        .then(function(r){
+          showToast("API " + r.status);
+          lastSubmit.textContent = "Ping response (first 200 chars):
+" + r.body.slice(0,200);
+        })
+        .catch(function(err){
+          showToast("Ping failed");
+          lastSubmit.textContent = "Ping failed: " + err.message;
+        });
     });
 
     // Filters
