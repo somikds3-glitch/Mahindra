@@ -39,11 +39,27 @@
       <button id="reloadBtn" title="Reload CSVs">Reload</button>
       <button id="clearFilters" title="Clear filters">Clear</button>
       <button id="pingBtn" title="Ping Apps Script">Ping API</button>
-      <button id="debugBtn" title="Show CSV debug">Debug</button>
+      <button id="debugBtn" title="Show CSV debug" onclick="window.__dbg && window.__dbg()">Debug</button>
       <select id="stateFilter"><option value="">All states</option></select>
       <select id="cityFilter"><option value="">All cities</option></select>
     </div>
   </header>
+
+  <!-- Early bootstrap: if this runs, buttons should respond -->
+  <script>
+    (function(){
+      try{
+        var boot = document.getElementById('status');
+        if (boot) boot.textContent = 'Booting…';
+        window.__dbg = function(){
+          alert('Debug button is wired. If later UI still fails, a later script crashed.');
+        };
+        window.__boot_ok = true;
+      }catch(e){
+        // If even this fails, the page is truly broken
+      }
+    })();
+  </script>
 
   <div class="wrap panel">
     <div id="emptyState" style="display:none;">No leads match your filters.</div>
@@ -82,6 +98,7 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', function(){
+    if (window.__boot_ok && statusBox) { statusBox.textContent = 'Boot OK. Starting…'; }
     var CONFIG = {
       CSV_BASE: './',                 // folder where the CSVs live
       LEADS_CSV: 'HTML.csv',          // case-sensitive
