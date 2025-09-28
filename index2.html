@@ -64,7 +64,7 @@
 
   <div id="toast" class="toast"></div>
 
-  <!-- Panic overlay: prints the first runtime error on the page (helps with blank screens) -->
+  <!-- Panic overlay: shows the first runtime error on the page -->
   <script>
   (function(){
     function paint(msg, src, line, col, err){
@@ -83,9 +83,7 @@
     var CONFIG = {
       LEADS_CSV: "HTML.csv",
       VENDORS_CSV: "vendor.csv",
-      GITHUB_API_URL: "https://api.github.com/repos/somikds3-glitch/Mahindra/issues",
-      GITHUB_PAT: "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",      // move server-side in production
-      OPEN_GITHUB_FALLBACK: false            // never redirect to GitHub
+      APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyXHyVsCVqeZpP7wuteH232xvSVdkwcfkVN0nN1vx4AS1U0ZVwitEqACX2wvGbnSDo/exec"
     };
 
     var statusBox   = document.getElementById('status');
@@ -112,7 +110,7 @@
       return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; });
     }
 
-    /* CSV parser that handles quotes and commas-in-quotes (Safari-safe) */
+    // CSV parser (handles quotes & commas)
     function parseCSV(text){
       var rows = [], row = [], i=0, field="", inQuotes=false, c, n=text.length;
       function pushField(){ row.push(field); field=""; }
@@ -120,13 +118,12 @@
       while(i<n){
         c = text[i++];
         if(inQuotes){
-          if(c === '"'){
-            if(i<n && text[i] === '"'){ field += '"'; i++; } else { inQuotes = false; }
-          } else { field += c; }
+          if(c === '"'){ if(i<n && text[i] === '"'){ field += '"'; i++; } else { inQuotes = false; } }
+          else { field += c; }
         } else {
           if(c === '"'){ inQuotes = true; }
           else if(c === ','){ pushField(); }
-          else if(c === '\r'){ /* ignore CR */ }
+          else if(c === '\r'){ /* ignore */ }
           else if(c === '\n'){ pushField(); pushRow(); }
           else { field += c; }
         }
@@ -137,15 +134,14 @@
       if(rows.length===0) return { headers:[], rows:[] };
       var headers = rows.shift().map(function(h){ return h.trim(); });
       var objs = rows.map(function(r){
-        var o = {};
-        for(var j=0;j<headers.length;j++){ o[headers[j]] = (r[j]||"").trim(); }
+        var o={}; for(var j=0;j<headers.length;j++){ o[headers[j]]=(r[j]||"").trim(); }
         return o;
       });
-      return { headers: headers, rows: objs };
+      return { headers:headers, rows:objs };
     }
 
     function fetchCSV(path){
-      return fetch(path + "?_ts=" + Date.now(), { cache: "no-store" })
+      return fetch(path + "?_ts=" + Date.now(), { cache:"no-store" })
         .then(function(res){
           if(!res.ok) throw new Error("Failed to fetch " + path + " (" + res.status + ")");
           return res.text();
@@ -160,7 +156,7 @@
     function uniqueSorted(arr){
       var seen = Object.create(null), out = [];
       for(var i=0;i<arr.length;i++){
-        var v = (arr[i]||"").trim(); if(!v) continue;
+        var v=(arr[i]||"").trim(); if(!v) continue;
         if(!seen[v]){ seen[v]=1; out.push(v); }
       }
       out.sort(function(a,b){ return a.localeCompare(b); });
@@ -225,60 +221,27 @@
       setStatus(filteredLeads.length, allOpenLeads.length);
     }
 
-    function csvEscape(val){
-      var s = String(val==null ? "" : val);
-      s = s.replace(/"/g, '""'); // Safari-safe
-      return '"' + s + '"';
-    }
-
     function submitIssue(out){
-      var csvHeader = "lead_id,lead_name,lead_address,lead_city,lead_subcity,lead_state,lead_ticket,note";
-      var csvRowArr = [
-        out.lead_id,out.lead_name,out.lead_address,out.lead_city,
-        out.lead_subcity,out.lead_state,out.lead_ticket,out.note
-      ];
-      var csvRow = csvRowArr.map(csvEscape).join(",");
-
-      var issue = {
-        title: "Vendor Quote",
-        body: "Please upsert this row:\n\n```csv\n"+csvHeader+"\n"+csvRow+"\n```\n"
-      };
-
-      // Hard-stop if no token; NEVER redirect
-      if(!CONFIG.GITHUB_PAT || /REPLACE|YOUR_REAL_PAT/i.test(CONFIG.GITHUB_PAT)){
-        showToast("Missing GitHub token. Staying on page.");
-        console.error("GitHub PAT is missing. Set CONFIG.GITHUB_PAT.");
-        return;
-      }
-
-      fetch(CONFIG.GITHUB_API_URL, {
+      // send the raw JSON to your Apps Script web app (which appends to the sheet)
+      fetch(CONFIG.APPS_SCRIPT_URL, {
         method: "POST",
-        headers: {
-          "Authorization": "Bearer " + CONFIG.GITHUB_PAT,
-          "Accept": "application/vnd.github+json",
-          "Content-Type": "application/json",
-          "X-GitHub-Api-Version": "2022-11-28"
-        },
-        body: JSON.stringify(issue)
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(out)
       })
-      .then(function(res){
-        if(!res.ok){
-          return res.text().then(function(t){
-            var msg = "GitHub API error ("+res.status+"): " + (t || res.statusText);
-            throw new Error(msg);
-          });
+      .then(function(res){ return res.json(); })
+      .then(function(r){
+        if(!r || r.ok !== true){
+          var msg = (r && (r.error || r.message)) || "Append failed";
+          throw new Error(msg);
         }
-        return res.json();
-      })
-      .then(function(data){
-        lastSubmit.textContent = "Created GitHub Issue #" + data.number;
-        showToast("Issue created successfully!");
+        lastSubmit.textContent = "Saved to Google Sheet.";
+        showToast("Saved!");
       })
       .catch(function(err){
         console.error(err);
-        showToast("Submit failed. See error box.");
         errorState.style.display = "block";
         errorState.textContent = "Submission failed: " + err.message;
+        showToast("Submit failed. See error box.");
       });
     }
 
@@ -307,8 +270,7 @@
           vendors = vendorCSV.rows;
 
           allOpenLeads = leadCSV.rows.filter(function(r){
-            var t = (r.lead_ticket||"").toLowerCase();
-            return t === "open";
+            return (r.lead_ticket||"").toLowerCase() === "open";
           });
 
           populateStateOptions(allOpenLeads);
