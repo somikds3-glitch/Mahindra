@@ -34,7 +34,7 @@
     <div id="status">Ready.</div>
     <div class="controls">
       <label style="display:flex;align-items:center;gap:6px">
-        <input type="checkbox" id="onlyOpen" checked /> Only OPEN
+        <input type="checkbox" id="onlyOpen" /> Only OPEN
       </label>
       <button id="reloadBtn" title="Reload CSVs">Reload</button>
       <button id="clearFilters" title="Clear filters">Clear</button>
@@ -234,14 +234,15 @@
 
     function init(){
       statusBox.textContent = 'Loading…'; emptyState.style.display='none'; errorState.style.display='none';
-      Promise.all([ fetchCSV(CONFIG.LEADS_CSV), fetchCSV(CONFIG.VENDORS_CSV) ])
-        .then(function(results){
-          var leadCSV = results[0], vendorCSV = results[1];
-          vendors = vendorCSV.rows;
-          allLeads = leadCSV.rows; // <-- keep ALL rows, do not pre-filter
+      fetchCSV(CONFIG.LEADS_CSV)
+        .then(function(leadCSV){
+          allLeads = leadCSV.rows;
           populateStateOptions(allLeads); populateCityOptions(allLeads, '');
           applyFilters();
-          statusBox.textContent = 'Loaded '+ allLeads.length +' leads, '+ vendors.length +' vendors.';
+          statusBox.textContent = 'Loaded ' + allLeads.length + ' leads.';
+          return fetchCSV(CONFIG.VENDORS_CSV)
+            .then(function(vendorCSV){ vendors = vendorCSV.rows; statusBox.textContent += ' ' + vendors.length + ' vendors.'; })
+            .catch(function(err){ console.warn('Vendor CSV load failed:', err.message); lastSubmit.textContent = 'Vendor.csv load failed: ' + err.message; });
         })
         .catch(function(err){ console.error(err); statusBox.textContent='Error loading data.'; errorState.style.display='block'; errorState.textContent='Load failed: ' + err.message; });
     }
