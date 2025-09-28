@@ -97,9 +97,9 @@
   <script>
   document.addEventListener('DOMContentLoaded', function(){
     var CONFIG = {
-      CSV_BASE: './',                 // folder where the CSVs live
-      LEADS_CSV: 'HTML.csv',          // case-sensitive
-      VENDORS_CSV: 'vendor.csv',      // case-sensitive
+      CSV_BASE: '',                 // we'll auto-detect below; leave blank
+      LEADS_CSV: 'HTML.csv',        // case-sensitive
+      VENDORS_CSV: 'vendor.csv',    // case-sensitive
       APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbw6qlBeI-BLoZUZR3uua2RV_vj8DvfDe63R_Fu4FpyP50Rej4cPZXJk9NQ1JTPCkNv7/exec'
     };
 
@@ -120,7 +120,14 @@
 
     function showToast(msg){ toastEl.textContent = msg; toastEl.classList.add('show'); setTimeout(function(){ toastEl.classList.remove('show'); }, 2000); }
     function escapeHTML(s){ s = s || ''; return s.replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]; }); }
-    function urlFor(path){ if (/^https?:/i.test(path)) return path; return (CONFIG.CSV_BASE || '') + path; }
+    function candidateUrlsFor(file){
+      var origin = location.origin;
+      var p = location.pathname.replace(/\/[^/]*$/, '/'); // current dir
+      var up = p.replace(/\/[^/]*\/$/, '/'); // one level up
+      var urls = [origin + p + file, origin + '/' + file, origin + up + file];
+      var seen = Object.create(null), out=[]; for (var i=0;i<urls.length;i++){ if(!seen[urls[i]]){ seen[urls[i]]=1; out.push(urls[i]); } }
+      return out;
+    }
 
     // Robust CSV parser (handles quotes, commas, CR/LF)
     function parseCSV(text){
@@ -185,11 +192,19 @@
     }
 
     function fetchCSV(path){
-      var url = urlFor(path) + '?_ts=' + Date.now();
-      return fetch(url, { cache:'no-store' })
-        .then(function(res){ if(!res.ok) throw new Error('HTTP ' + res.status + ' for ' + url); return res.text(); })
-        .then(function(txt){ var parsed = parseCSV(txt); if (parsed.rows.length===0){ console.warn('Parsed 0 rows for', url); } return parsed; })
-        .catch(function(err){ throw new Error('CSV fetch failed for ' + url + ': ' + err.message); });
+      var tries = candidateUrlsFor(path);
+      var tried = [];
+      function attempt(i){
+        if (i>=tries.length){ throw new Error('All locations failed for '+path+' → '+tried.join(' | ')); }
+        var url = tries[i] + (tries[i].indexOf('?')===-1 ? '?_ts=' + Date.now() : '');
+        tried.push(url);
+        return fetch(url, { cache:'no-store' })
+          .then(function(res){ if(!res.ok) throw new Error('HTTP '+res.status); return res.text(); })
+          .then(function(txt){ var parsed = parseCSV(txt); if (parsed.rows.length===0){ console.warn('Parsed 0 rows for', url); }
+            parsed.__source = url; return parsed; })
+          .catch(function(_){ return attempt(i+1); });
+      }
+      return attempt(0);
     }
 
     function setStatus(msg){ statusBox.textContent = msg; }
@@ -252,7 +267,7 @@
           allLeads = leadCSV.rows;
           populateStateOptions(allLeads); populateCityOptions(allLeads, '');
           applyFilters();
-          statusBox.textContent = 'Loaded ' + allLeads.length + ' leads.';
+          statusBox.textContent = 'Loaded ' + allLeads.length + ' leads.' + (leadCSV.__source ? ' (from '+leadCSV.__source+')' : '');
           return fetchCSV(CONFIG.VENDORS_CSV)
             .then(function(vendorCSV){ vendors = vendorCSV.rows; statusBox.textContent += ' ' + vendors.length + ' vendors.'; })
             .catch(function(err){ console.warn('Vendor CSV load failed:', err.message); lastSubmit.textContent = 'Vendor.csv load failed: ' + err.message; });
@@ -266,15 +281,23 @@
     var pingBtn = document.getElementById('pingBtn'); if (pingBtn) pingBtn.addEventListener('click', function(){ fetch(CONFIG.APPS_SCRIPT_URL, { method:'GET' }).then(function(r){ return r.text().then(function(t){ return {status:r.status, body:t}; }); }).then(function(r){ showToast('API ' + r.status); lastSubmit.textContent = 'Ping response (first 200 chars):
 ' + String(r.body).slice(0,200); }).catch(function(err){ showToast('Ping failed'); lastSubmit.textContent = 'Ping failed: ' + err.message; }); });
     var debugBtn = document.getElementById('debugBtn'); if (debugBtn) debugBtn.addEventListener('click', function(){
+      var leadUrls = candidateUrlsFor(CONFIG.LEADS_CSV).join(' → ');
+      var vendUrls = candidateUrlsFor(CONFIG.VENDORS_CSV).join(' → ');
       Promise.all([
-        fetch(urlFor(CONFIG.LEADS_CSV)).then(function(r){return r.text();}).catch(function(e){return 'ERR:'+e.message;}),
-        fetch(urlFor(CONFIG.VENDORS_CSV)).then(function(r){return r.text();}).catch(function(e){return 'ERR:'+e.message;})
+        fetch(candidateUrlsFor(CONFIG.LEADS_CSV)[0]).then(function(r){return r.text();}).catch(function(e){return 'ERR:'+e.message;}),
+        fetch(candidateUrlsFor(CONFIG.VENDORS_CSV)[0]).then(function(r){return r.text();}).catch(function(e){return 'ERR:'+e.message;})
       ]).then(function(pair){
         var a = pair[0], b = pair[1];
-        lastSubmit.textContent = 'HTML.csv first 200 chars:
+        lastSubmit.textContent = 'HTML.csv tried: '+leadUrls+'
+' +
+                                 'vendor.csv tried: '+vendUrls+'
+
+' +
+                                 'HTML.csv first 200 chars:
 ' + String(a).slice(0,200) + '
 
-' + 'vendor.csv first 200 chars:
+' +
+                                 'vendor.csv first 200 chars:
 ' + String(b).slice(0,200);
       }).catch(function(e){ lastSubmit.textContent = 'Debug failed: '+e.message; });
     });
