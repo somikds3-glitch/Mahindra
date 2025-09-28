@@ -46,6 +46,8 @@
     .ok{ color:#7affbc } .err{ color:#ff7a7a }
     .toast{position:fixed;right:16px;bottom:16px;background:#11182a;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.12);display:none}
     .toast.show{display:block}
+    /* same visual length for both dropdowns */
+    .toolbar select{ width:220px; min-width:220px; }
   </style>
 </head>
 <body>
@@ -57,7 +59,9 @@
   <div class="wrap panel">
     <div class="toolbar">
       <span class="pill">Sink: <strong>NoCodeAPI → Google Sheets</strong></span>
-      <button class="secondary" id="reloadBtn">Reload CSVs</button>
+      <select id="stateFilter"><option value="">All States</option></select>
+      <select id="cityFilter"><option value="">All Cities</option></select>
+      <button class="secondary" id="reloadBtn">Reload</button>
       <button class="secondary" id="debugBtn">Debug</button>
       <div class="status" id="status">Ready.</div>
     </div>
@@ -79,7 +83,7 @@
         <h3 style="margin:0 0 6px">How it works</h3>
         <ol style="margin:8px 0 10px 18px; color:var(--muted); line-height:1.5">
           <li>Pick a vendor from <code>vendor.csv</code>, add a <strong>quote</strong>, hit <em>Submit</em>.</li>
-          <li>We POST a JSON object to your NoCodeAPI endpoint (<code>/addRows</code> with <code>?tabId=Sheet1</code>).</li>
+          <li>We POST a JSON object to your NoCodeAPI endpoint (<code>/addRows?tabId=Sheet1</code>).</li>
           <li>NoCodeAPI appends a row to your Google Sheet under the headers.</li>
         </ol>
         <div class="hint">Sheet headers expected (left→right):<br>
@@ -93,40 +97,42 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script>
-  // ---------- Config ----------
+  // ---------- Config (kept as before) ----------
   const CONFIG = {
     LEADS_CSV: "HTML.csv",
     VENDORS_CSV: "vendor.csv",
-    // Your NoCodeAPI endpoint (we'll append ?tabId=Sheet1 if missing)
     SHEET_API_BASE: "https://v1.nocodeapi.com/somik/google_sheets/wrhTkBHrUtmiKJnQ/addRows",
     SHEET_TAB: "Sheet1"
   };
-
-  function sheetEndpoint() {
+  function sheetEndpoint(){
     const hasQuery = CONFIG.SHEET_API_BASE.includes("?");
     const hasTab = CONFIG.SHEET_API_BASE.includes("tabId=");
-    if (hasTab) return CONFIG.SHEET_API_BASE;
-    return CONFIG.SHEET_API_BASE + (hasQuery ? "&" : "?") + "tabId=" + encodeURIComponent(CONFIG.SHEET_TAB);
+    return hasTab ? CONFIG.SHEET_API_BASE
+                  : CONFIG.SHEET_API_BASE + (hasQuery ? "&" : "?") + "tabId=" + encodeURIComponent(CONFIG.SHEET_TAB);
   }
 
-  // ---------- Helpers ----------
+  // ---------- DOM refs ----------
   const statusBox = document.getElementById('status');
   const lastSubmit = document.getElementById('lastSubmit');
-  const toastEl = document.getElementById('toast');
+  const toastEl    = document.getElementById('toast');
+  const tbody      = document.getElementById('leadBody');
+  const stateSel   = document.getElementById('stateFilter');
+  const citySel    = document.getElementById('cityFilter');
+
   const setStatus = (msg) => statusBox.textContent = msg;
   const showToast = (msg) => { toastEl.textContent = msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'), 1800); };
-  const escapeHTML = s => (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]));
+  const escapeHTML = (s) => (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]));
 
+  // ---------- CSV helpers (unchanged logic) ----------
   function candidateUrlsFor(file){
     const origin = location.origin;
-    const p = location.pathname.replace(/\/[^/]*$/, '/');        // current dir
-    const up = p.replace(/\/[^/]*\/$/, '/');                     // one up
+    const p  = location.pathname.replace(/\/[^/]*$/, '/');       // current dir
+    const up = p.replace(/\/[^/]*\/$/, '/');                      // one up
     const urls = [origin + p + file, origin + '/' + file, origin + up + file];
-    const seen = Object.create(null), out = [];
+    const seen = Object.create(null), out=[];
     for (const u of urls){ if(!seen[u]){ seen[u]=1; out.push(u); } }
     return out;
   }
-
   function parseCSV(text){
     const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim().split('\n');
     if (!lines.length) return { headers:[], rows:[] };
@@ -138,7 +144,6 @@
     });
     return { headers, rows };
   }
-
   async function fetchCSV(path){
     const tries = candidateUrlsFor(path);
     const tried = [];
@@ -156,13 +161,36 @@
     return attempt(0);
   }
 
-  // ---------- Page logic ----------
+  // ---------- Data holders ----------
   let vendors = [];
+  let allLeads = [];       // all rows from HTML.csv
+  let openLeads = [];      // only rows with lead_ticket === "Open"
 
+  // ---------- Filters ----------
+  function uniqueSorted(list){ return [...new Set(list.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b))); }
+  function populateStateOptions(){
+    const states = uniqueSorted(openLeads.map(r => r.lead_state));
+    stateSel.innerHTML = '<option value="">All States</option>' + states.map(s => `<option value="${escapeHTML(s)}">${escapeHTML(s)}</option>`).join('');
+  }
+  function populateCityOptions(stateVal){
+    const src = stateVal ? openLeads.filter(r => (r.lead_state||"") === stateVal) : openLeads;
+    const cities = uniqueSorted(src.map(r => r.lead_city));
+    citySel.innerHTML = '<option value="">All Cities</option>' + cities.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
+  }
+  function applyFilters(){
+    const s = stateSel.value, c = citySel.value;
+    let subset = openLeads.slice();
+    if (s) subset = subset.filter(r => (r.lead_state||"") === s);
+    if (c) subset = subset.filter(r => (r.lead_city||"")  === c);
+    renderLeadTable(subset);
+    setStatus(`Showing ${subset.length} of ${openLeads.length} open leads`);
+  }
+
+  // ---------- UI render ----------
   function vendorOptionsHTMLForCity(city){
     const list = vendors.filter(v => (v.vendor_city||"").toLowerCase() === (city||"").toLowerCase());
-    if (!list.length) return `<option value="">No vendors in ${escapeHTML(city || "this city")}</option>`;
-    return list.map(v => {
+    if (!list.length) return `<option value="">Select vendor…</option>`;
+    return `<option value="">Select vendor…</option>` + list.map(v => {
       const label = `${v.vendor_name} (${v.vendor_subcity || ""})`;
       const val = JSON.stringify(v).replaceAll("'", "&apos;");
       return `<option value='${val}'>${escapeHTML(label)}</option>`;
@@ -170,7 +198,6 @@
   }
 
   function renderLeadTable(leads){
-    const tbody = document.getElementById('leadBody');
     tbody.innerHTML = "";
     for(const r of leads){
       const opts = vendorOptionsHTMLForCity(r.lead_city);
@@ -185,10 +212,7 @@
         <td><span class="pill">${escapeHTML(r.lead_ticket)}</span></td>
         <td class="right">
           <div class="quote-row">
-            <select class="vendorSel">
-              <option value="">Select vendor…</option>
-              ${opts}
-            </select>
+            <select class="vendorSel">${opts}</select>
             <input type="number" class="vendorQuote" placeholder="Vendor quote (₹)" min="0" step="0.01" />
             <input type="text" class="note" placeholder="Optional note" />
             <button class="submitBtn">Submit</button>
@@ -201,12 +225,13 @@
     }
   }
 
+  // ---------- NoCodeAPI submit (kept intact) ----------
   async function submitToSheetApiObject(payload){
-    const endpoint = sheetEndpoint(); // ensures ?tabId=Sheet1 exists
+    const endpoint = sheetEndpoint();
     const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify([payload]) // NoCodeAPI expects an array of objects at /addRows
+      body: JSON.stringify([payload]) // /addRows expects array of objects
     });
     const body = await res.json().catch(()=> ({}));
     if (!res.ok) throw new Error(body.message || JSON.stringify(body) || `HTTP ${res.status}`);
@@ -257,6 +282,7 @@
     }
   }
 
+  // ---------- Init ----------
   async function init(){
     try{
       setStatus("Loading CSVs…");
@@ -264,10 +290,15 @@
         fetchCSV(CONFIG.LEADS_CSV),
         fetchCSV(CONFIG.VENDORS_CSV)
       ]);
-      vendors = vendorCSV.rows;
-      const openLeads = leadCSV.rows.filter(r => (r.lead_ticket||"").toLowerCase() === "open");
-      renderLeadTable(openLeads);
-      setStatus(`Loaded ${openLeads.length} open leads, ${vendors.length} vendors.`);
+      vendors   = vendorCSV.rows;
+      allLeads  = leadCSV.rows;
+      openLeads = allLeads.filter(r => (r.lead_ticket||"").toLowerCase() === "open");
+
+      populateStateOptions();
+      populateCityOptions("");   // all cities initially
+      applyFilters();            // renders table
+
+      setStatus(`Loaded ${openLeads.length} open leads, ${vendors.length} vendors`);
     }catch(err){
       console.error(err);
       setStatus("Error: " + err.message);
@@ -275,7 +306,7 @@
     }
   }
 
-  // ---------- Buttons ----------
+  // ---------- Events ----------
   document.getElementById('reloadBtn').addEventListener('click', () => init());
   document.getElementById('debugBtn').addEventListener('click', async () => {
     try{
@@ -295,8 +326,10 @@
       lastSubmit.textContent = 'Debug failed: ' + e.message;
     }
   });
+  stateSel.addEventListener('change', () => { populateCityOptions(stateSel.value); citySel.value=""; applyFilters(); });
+  citySel.addEventListener('change', applyFilters);
 
-  // ---------- Go ----------
+  // Go
   init();
   </script>
 </body>
