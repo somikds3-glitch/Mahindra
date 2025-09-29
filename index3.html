@@ -6,39 +6,74 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: Segoe UI, sans-serif; margin: 0; padding: 0; background: #0b0f19; color: #e8efff; }
-    .card { padding: 18px; border-radius: 10px; background: #11182a; margin: 20px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    header { padding: 20px; background: #11182a; }
+    h1 { margin: 0; }
+    .toolbar { display: flex; gap: 10px; margin: 15px; }
+    select, input, button { padding: 8px; border-radius: 5px; border: 1px solid #333; }
+    table { width: 100%; border-collapse: collapse; margin: 15px; }
     th, td { padding: 10px; border: 1px solid #333; }
     .pill { background: #222; padding: 4px 8px; border-radius: 20px; font-size: 12px; }
     .right { text-align: right; }
+    .status { margin: 15px; color: #9bb0d8; }
   </style>
 </head>
 <body>
-  <header class="card">
+  <header>
     <h1>Leads (Open) & Vendor Quotes</h1>
-    <p>Reads <code>HTML.csv</code> & <code>vendor.csv</code>. Submits to <strong>Microsoft Forms → Power Automate → Excel</strong>.</p>
+    <p>Submits to Microsoft Forms → Power Automate → Excel</p>
   </header>
 
-  <main class="card">
-    <table id="leadTable">
-      <thead>
-        <tr>
-          <th>Lead ID</th><th>Name</th><th>Address</th><th>City</th>
-          <th>Subcity</th><th>State</th><th>Ticket</th><th class="right">Action</th>
-        </tr>
-      </thead>
-      <tbody id="leadBody"></tbody>
-    </table>
-  </main>
+  <div class="toolbar">
+    <label>Filter by State: <select id="stateFilter"><option value="">All States</option></select></label>
+    <label>Filter by City: <select id="cityFilter"><option value="">All Cities</option></select></label>
+    <button onclick="init()">Reload</button>
+  </div>
+
+  <div class="status" id="status">Ready.</div>
+
+  <table id="leadTable">
+    <thead>
+      <tr>
+        <th>Lead ID</th><th>Name</th><th>Address</th><th>City</th>
+        <th>Subcity</th><th>State</th><th>Ticket</th><th class="right">Action</th>
+      </tr>
+    </thead>
+    <tbody id="leadBody"></tbody>
+  </table>
 
   <script>
   const CONFIG = {
     LEADS_CSV: "HTML.csv",
     VENDORS_CSV: "vendor.csv",
-    FORM_URL: "https://forms.office.com/Pages/ResponsePage.aspx?id=1HaTekN8D0iCuqCQZH9lHcdPGQXQJD1Lv75jWGbmYzFUOVk3NE9SRjRNS1pFT1hBN001SjY0OFU0Ny4u" // replace
+    FORM_URL: "https://forms.office.com/Pages/ResponsePage.aspx?id=1HaTekN8D0iCuqCQZH9lHcdPGQXQJD1Lv75jWGbmYzFUOVk3NE9SRjRNS1pFT1hBN001SjY0OFU0Ny4u" // replace with your formId
   };
 
-  // ---------- CSV parser ----------
+  // mapping of Form questionIds → Excel fields
+  const QUESTION_IDS = {
+    lead_id:       "rdea06f8b7cf64681b944514e695f15b9",
+    lead_name:     "r58aa67396ee6406e9618b61fbdc32f6d",
+    lead_address:  "r2d930859d966457cbaa647c161de5405",
+    lead_city:     "r69b0465623b44e34bff098fdee97ad59",
+    lead_subcity:  "rb432635258064fc8a87c108c15ee237a",
+    lead_ticket:   "rb9bdac7329284f3baee724e5593dd3db",
+    vendor_id:     "r52c7977769cd4eeebbfc2cba49699e78",
+    vendor_name:   "r97b7f208b3e74c9d815542bf77887405",
+    vendor_quote:  "r5f49235b92d04d6ab3299035597ec426",
+    vendor_subcity:"r762e22110b574c76b180cf1672bd80be",
+    vendor_city:   "r8fea82955f594ed2bb1b74276acb716f",
+    vendor_address:"r0045410d5d2749b2b2caadf9561a1faf",
+    note:          "r05187182c6454cfea9260d87e7585dcf",
+    timestamp:     "r866644dc87084ffa99c8e4cee403c09d"
+  };
+
+  const statusBox = document.getElementById("status");
+  const tbody = document.getElementById("leadBody");
+  const stateSel = document.getElementById("stateFilter");
+  const citySel = document.getElementById("cityFilter");
+
+  const setStatus = msg => statusBox.textContent = msg;
+
+  // ---------- CSV helpers ----------
   function parseCSV(text) {
     const lines = text.trim().split("\n");
     const headers = lines.shift().split(",");
@@ -55,11 +90,30 @@
     return parseCSV(await res.text());
   }
 
+  // ---------- Filters ----------
+  function uniqueSorted(list){ return [...new Set(list.filter(Boolean))].sort(); }
+
+  function populateStateOptions(leads) {
+    const states = uniqueSorted(leads.map(r => r.lead_state));
+    stateSel.innerHTML = '<option value="">All States</option>' +
+      states.map(s=>`<option value="${s}">${s}</option>`).join("");
+  }
+
+  function populateCityOptions(leads, stateVal) {
+    const src = stateVal ? leads.filter(r => r.lead_state === stateVal) : leads;
+    const cities = uniqueSorted(src.map(r => r.lead_city));
+    citySel.innerHTML = '<option value="">All Cities</option>' +
+      cities.map(c=>`<option value="${c}">${c}</option>`).join("");
+  }
+
   // ---------- Render ----------
-  function renderLeads(leads, vendors) {
-    const tbody = document.getElementById("leadBody");
+  function renderLeadTable(leads, vendors) {
     tbody.innerHTML = "";
-    leads.filter(r=>r.lead_ticket==="Open").forEach(lead => {
+    leads.forEach(lead => {
+      const vendorOptions = vendors.filter(v=>v.vendor_city===lead.lead_city)
+        .map(v=>`<option value='${JSON.stringify(v)}'>${v.vendor_name}</option>`)
+        .join("");
+
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${lead.lead_id}</td>
@@ -70,12 +124,7 @@
         <td>${lead.lead_state}</td>
         <td><span class="pill">${lead.lead_ticket}</span></td>
         <td class="right">
-          <select class="vendorSel">
-            <option value="">Select vendor…</option>
-            ${vendors.filter(v=>v.vendor_city===lead.lead_city)
-              .map(v=>`<option value='${JSON.stringify(v)}'>${v.vendor_name}</option>`)
-              .join("")}
-          </select>
+          <select class="vendorSel"><option value="">Select vendor…</option>${vendorOptions}</select>
           <input type="number" class="vendorQuote" placeholder="Quote (₹)" />
           <input type="text" class="note" placeholder="Note" />
           <button onclick="submitForm(this)">Submit</button>
@@ -97,44 +146,86 @@
     if (!vendor.vendor_id) { alert("Choose vendor"); return; }
     if (!quote) { alert("Enter quote"); return; }
 
-    const timestamp = new Date().toISOString();
+    const payload = {
+      lead_id: lead.lead_id,
+      lead_name: lead.lead_name,
+      lead_address: lead.lead_address,
+      lead_city: lead.lead_city,
+      lead_subcity: lead.lead_subcity,
+      lead_ticket: lead.lead_ticket,
+      vendor_id: vendor.vendor_id,
+      vendor_name: vendor.vendor_name,
+      vendor_quote: quote,
+      vendor_subcity: vendor.vendor_subcity,
+      vendor_city: vendor.vendor_city,
+      vendor_address: vendor.vendor_address,
+      note: note,
+      timestamp: new Date().toISOString()
+    };
 
-    // Build Form submission payload
-    const formData = new URLSearchParams();
-    formData.append("entry.111111", lead.lead_id);        // lead_id
-    formData.append("entry.222222", lead.lead_name);      // lead_name
-    formData.append("entry.333333", lead.lead_address);   // lead_address
-    formData.append("entry.444444", lead.lead_city);      // lead_city
-    formData.append("entry.555555", lead.lead_subcity);   // lead_subcity
-    formData.append("entry.666666", lead.lead_ticket);    // lead_ticket
-    formData.append("entry.777777", vendor.vendor_id);    // vendor_id
-    formData.append("entry.888888", vendor.vendor_name);  // vendor_name
-    formData.append("entry.999999", quote);               // vendor_quote
-    formData.append("entry.121212", vendor.vendor_subcity); // vendor_subcity
-    formData.append("entry.131313", vendor.vendor_city);    // vendor_city
-    formData.append("entry.141414", vendor.vendor_address); // vendor_address
-    formData.append("entry.151515", note);                // note
-    formData.append("entry.161616", timestamp);           // timestamp
+    const answers = Object.entries(payload).map(([key, value]) => ({
+      questionId: QUESTION_IDS[key],
+      answer1: value
+    }));
 
-    const res = await fetch(CONFIG.FORM_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: formData.toString()
-    });
+    const body = {
+      answers: JSON.stringify(answers),
+      emailReceiptConsent: false,
+      startDate: new Date().toISOString(),
+      submitDate: new Date().toISOString()
+    };
 
-    if (res.ok) {
-      alert("Submitted to Microsoft Form → Excel!");
-    } else {
-      alert("Submission failed: " + res.status);
+    try {
+      setStatus("Submitting…");
+      const res = await fetch(CONFIG.FORM_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setStatus("✅ Submitted to Microsoft Form");
+    } catch (err) {
+      console.error(err);
+      setStatus("❌ Submit failed: " + err.message);
     }
   }
 
   // ---------- Init ----------
-  (async () => {
-    const leads = await fetchCSV(CONFIG.LEADS_CSV);
-    const vendors = await fetchCSV(CONFIG.VENDORS_CSV);
-    renderLeads(leads, vendors);
-  })();
+  async function init() {
+    try {
+      setStatus("Loading data…");
+      const [leads, vendors] = await Promise.all([
+        fetchCSV(CONFIG.LEADS_CSV),
+        fetchCSV(CONFIG.VENDORS_CSV)
+      ]);
+      const openLeads = leads.filter(r => r.lead_ticket.toLowerCase() === "open");
+      populateStateOptions(openLeads);
+      populateCityOptions(openLeads, "");
+      renderLeadTable(openLeads, vendors);
+
+      stateSel.onchange = () => {
+        populateCityOptions(openLeads, stateSel.value);
+        filterAndRender(openLeads, vendors);
+      };
+      citySel.onchange = () => filterAndRender(openLeads, vendors);
+
+      setStatus(`Loaded ${openLeads.length} open leads, ${vendors.length} vendors`);
+    } catch (err) {
+      console.error(err);
+      setStatus("Error loading data: " + err.message);
+    }
+  }
+
+  function filterAndRender(leads, vendors) {
+    let filtered = leads;
+    if (stateSel.value) filtered = filtered.filter(r=>r.lead_state===stateSel.value);
+    if (citySel.value) filtered = filtered.filter(r=>r.lead_city===citySel.value);
+    renderLeadTable(filtered, vendors);
+    setStatus(`Showing ${filtered.length} leads`);
+  }
+
+  // start
+  init();
   </script>
 </body>
 </html>
