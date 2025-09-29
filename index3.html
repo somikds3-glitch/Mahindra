@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Leads & Vendor Quotes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Segoe UI, sans-serif; margin: 0; padding: 0; background: #0b0f19; color: #e8efff; }
+    .card { padding: 18px; border-radius: 10px; background: #11182a; margin: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 10px; border: 1px solid #333; }
+    .pill { background: #222; padding: 4px 8px; border-radius: 20px; font-size: 12px; }
+    .right { text-align: right; }
+  </style>
+</head>
+<body>
+  <header class="card">
+    <h1>Leads (Open) & Vendor Quotes</h1>
+    <p>Reads <code>HTML.csv</code> & <code>vendor.csv</code>. Submits to <strong>Microsoft Forms → Power Automate → Excel</strong>.</p>
+  </header>
+
+  <main class="card">
+    <table id="leadTable">
+      <thead>
+        <tr>
+          <th>Lead ID</th><th>Name</th><th>Address</th><th>City</th>
+          <th>Subcity</th><th>State</th><th>Ticket</th><th class="right">Action</th>
+        </tr>
+      </thead>
+      <tbody id="leadBody"></tbody>
+    </table>
+  </main>
+
+  <script>
+  const CONFIG = {
+    LEADS_CSV: "HTML.csv",
+    VENDORS_CSV: "vendor.csv",
+    FORM_URL: "https://forms.office.com/Pages/ResponsePage.aspx?id=1HaTekN8D0iCuqCQZH9lHcdPGQXQJD1Lv75jWGbmYzFUOVk3NE9SRjRNS1pFT1hBN001SjY0OFU0Ny4u" // replace
+  };
+
+  // ---------- CSV parser ----------
+  function parseCSV(text) {
+    const lines = text.trim().split("\n");
+    const headers = lines.shift().split(",");
+    return lines.map(line => {
+      const cols = line.split(",");
+      const obj = {};
+      headers.forEach((h,i)=> obj[h.trim()] = cols[i] ? cols[i].trim() : "");
+      return obj;
+    });
+  }
+
+  async function fetchCSV(file) {
+    const res = await fetch(file);
+    return parseCSV(await res.text());
+  }
+
+  // ---------- Render ----------
+  function renderLeads(leads, vendors) {
+    const tbody = document.getElementById("leadBody");
+    tbody.innerHTML = "";
+    leads.filter(r=>r.lead_ticket==="Open").forEach(lead => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${lead.lead_id}</td>
+        <td>${lead.lead_name}</td>
+        <td>${lead.lead_address}</td>
+        <td>${lead.lead_city}</td>
+        <td>${lead.lead_subcity}</td>
+        <td>${lead.lead_state}</td>
+        <td><span class="pill">${lead.lead_ticket}</span></td>
+        <td class="right">
+          <select class="vendorSel">
+            <option value="">Select vendor…</option>
+            ${vendors.filter(v=>v.vendor_city===lead.lead_city)
+              .map(v=>`<option value='${JSON.stringify(v)}'>${v.vendor_name}</option>`)
+              .join("")}
+          </select>
+          <input type="number" class="vendorQuote" placeholder="Quote (₹)" />
+          <input type="text" class="note" placeholder="Note" />
+          <button onclick="submitForm(this)">Submit</button>
+        </td>
+      `;
+      tr.dataset.lead = JSON.stringify(lead);
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ---------- Submit ----------
+  async function submitForm(btn) {
+    const tr = btn.closest("tr");
+    const lead = JSON.parse(tr.dataset.lead);
+    const vendor = JSON.parse(tr.querySelector(".vendorSel").value || "{}");
+    const quote = tr.querySelector(".vendorQuote").value;
+    const note = tr.querySelector(".note").value;
+
+    if (!vendor.vendor_id) { alert("Choose vendor"); return; }
+    if (!quote) { alert("Enter quote"); return; }
+
+    const timestamp = new Date().toISOString();
+
+    // Build Form submission payload
+    const formData = new URLSearchParams();
+    formData.append("entry.111111", lead.lead_id);        // lead_id
+    formData.append("entry.222222", lead.lead_name);      // lead_name
+    formData.append("entry.333333", lead.lead_address);   // lead_address
+    formData.append("entry.444444", lead.lead_city);      // lead_city
+    formData.append("entry.555555", lead.lead_subcity);   // lead_subcity
+    formData.append("entry.666666", lead.lead_ticket);    // lead_ticket
+    formData.append("entry.777777", vendor.vendor_id);    // vendor_id
+    formData.append("entry.888888", vendor.vendor_name);  // vendor_name
+    formData.append("entry.999999", quote);               // vendor_quote
+    formData.append("entry.121212", vendor.vendor_subcity); // vendor_subcity
+    formData.append("entry.131313", vendor.vendor_city);    // vendor_city
+    formData.append("entry.141414", vendor.vendor_address); // vendor_address
+    formData.append("entry.151515", note);                // note
+    formData.append("entry.161616", timestamp);           // timestamp
+
+    const res = await fetch(CONFIG.FORM_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formData.toString()
+    });
+
+    if (res.ok) {
+      alert("Submitted to Microsoft Form → Excel!");
+    } else {
+      alert("Submission failed: " + res.status);
+    }
+  }
+
+  // ---------- Init ----------
+  (async () => {
+    const leads = await fetchCSV(CONFIG.LEADS_CSV);
+    const vendors = await fetchCSV(CONFIG.VENDORS_CSV);
+    renderLeads(leads, vendors);
+  })();
+  </script>
+</body>
+</html>
