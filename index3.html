@@ -20,7 +20,7 @@
 <body>
   <header>
     <h1>Leads (Open) & Vendor Quotes</h1>
-    <p>Submits to Microsoft Forms → Power Automate → Excel</p>
+    <p>Submits to Colab Flask API → Excel via ngrok</p>
   </header>
 
   <div class="toolbar">
@@ -35,7 +35,7 @@
     <thead>
       <tr>
         <th>Lead ID</th><th>Name</th><th>Address</th><th>City</th>
-        <th>Subcity</th><th>State</th><th>Ticket</th><th class="right">Action</th>
+        <th>Subcity</th><th>State</th><th class="right">Action</th>
       </tr>
     </thead>
     <tbody id="leadBody"></tbody>
@@ -45,25 +45,7 @@
   const CONFIG = {
     LEADS_CSV: "HTML.csv",
     VENDORS_CSV: "vendor.csv",
-    FORM_URL: "https://forms.office.com/formapi/submit?formId=1HaTekN8D0iCuqCQZH9lHcdPGQXQJD1Lv75jWGbmYzFUOVk3NE9SRjRNS1pFT1hBN001SjY0OFU0Ny4u" // replace with your formId
-  };
-
-  // mapping of Form questionIds → Excel fields
-  const QUESTION_IDS = {
-    lead_id:       "rdea06f8b7cf64681b944514e695f15b9",
-    lead_name:     "r58aa67396ee6406e9618b61fbdc32f6d",
-    lead_address:  "r2d930859d966457cbaa647c161de5405",
-    lead_city:     "r69b0465623b44e34bff098fdee97ad59",
-    lead_subcity:  "rb432635258064fc8a87c108c15ee237a",
-    lead_ticket:   "rb9bdac7329284f3baee724e5593dd3db",
-    vendor_id:     "r52c7977769cd4eeebbfc2cba49699e78",
-    vendor_name:   "r97b7f208b3e74c9d815542bf77887405",
-    vendor_quote:  "r5f49235b92d04d6ab3299035597ec426",
-    vendor_subcity:"r762e22110b574c76b180cf1672bd80be",
-    vendor_city:   "r8fea82955f594ed2bb1b74276acb716f",
-    vendor_address:"r0045410d5d2749b2b2caadf9561a1faf",
-    note:          "r05187182c6454cfea9260d87e7585dcf",
-    timestamp:     "r866644dc87084ffa99c8e4cee403c09d"
+    API_URL: "https://af832a4e7085.ngrok-free.app/submit" // ✅ your current ngrok URL
   };
 
   const statusBox = document.getElementById("status");
@@ -73,7 +55,7 @@
 
   const setStatus = msg => statusBox.textContent = msg;
 
-  // ---------- CSV helpers ----------
+  // CSV helpers
   function parseCSV(text) {
     const lines = text.trim().split("\n");
     const headers = lines.shift().split(",");
@@ -90,7 +72,7 @@
     return parseCSV(await res.text());
   }
 
-  // ---------- Filters ----------
+  // Filters
   function uniqueSorted(list){ return [...new Set(list.filter(Boolean))].sort(); }
 
   function populateStateOptions(leads) {
@@ -106,7 +88,7 @@
       cities.map(c=>`<option value="${c}">${c}</option>`).join("");
   }
 
-  // ---------- Render ----------
+  // Render
   function renderLeadTable(leads, vendors) {
     tbody.innerHTML = "";
     leads.forEach(lead => {
@@ -122,7 +104,6 @@
         <td>${lead.lead_city}</td>
         <td>${lead.lead_subcity}</td>
         <td>${lead.lead_state}</td>
-        <td><span class="pill">${lead.lead_ticket}</span></td>
         <td class="right">
           <select class="vendorSel"><option value="">Select vendor…</option>${vendorOptions}</select>
           <input type="number" class="vendorQuote" placeholder="Quote (₹)" />
@@ -135,7 +116,7 @@
     });
   }
 
-  // ---------- Submit ----------
+  // Submit
   async function submitForm(btn) {
     const tr = btn.closest("tr");
     const lead = JSON.parse(tr.dataset.lead);
@@ -143,7 +124,7 @@
     const quote = tr.querySelector(".vendorQuote").value;
     const note = tr.querySelector(".note").value;
 
-    if (!vendor.vendor_id) { alert("Choose vendor"); return; }
+    if (!vendor.vendor_name) { alert("Choose vendor"); return; }
     if (!quote) { alert("Enter quote"); return; }
 
     const payload = {
@@ -152,45 +133,30 @@
       lead_address: lead.lead_address,
       lead_city: lead.lead_city,
       lead_subcity: lead.lead_subcity,
-      lead_ticket: lead.lead_ticket,
-      vendor_id: vendor.vendor_id,
+      lead_state: lead.lead_state,
       vendor_name: vendor.vendor_name,
       vendor_quote: quote,
-      vendor_subcity: vendor.vendor_subcity,
-      vendor_city: vendor.vendor_city,
-      vendor_address: vendor.vendor_address,
-      note: note,
-      timestamp: new Date().toISOString()
-    };
-
-    const answers = Object.entries(payload).map(([key, value]) => ({
-      questionId: QUESTION_IDS[key],
-      answer1: value
-    }));
-
-    const body = {
-      answers: JSON.stringify(answers),
-      emailReceiptConsent: false,
-      startDate: new Date().toISOString(),
-      submitDate: new Date().toISOString()
+      note: note
     };
 
     try {
       setStatus("Submitting…");
-      const res = await fetch(CONFIG.FORM_URL, {
+      const res = await fetch(CONFIG.API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify(payload)
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
-      setStatus("✅ Submitted to Microsoft Form");
+      const resp = await res.json();
+      console.log("Response:", resp);
+      setStatus("✅ Submitted to Colab API");
     } catch (err) {
       console.error(err);
       setStatus("❌ Submit failed: " + err.message);
     }
   }
 
-  // ---------- Init ----------
+  // Init
   async function init() {
     try {
       setStatus("Loading data…");
@@ -198,7 +164,7 @@
         fetchCSV(CONFIG.LEADS_CSV),
         fetchCSV(CONFIG.VENDORS_CSV)
       ]);
-      const openLeads = leads.filter(r => r.lead_ticket.toLowerCase() === "open");
+      const openLeads = leads.filter(r => (r.lead_ticket||"").toLowerCase() === "open");
       populateStateOptions(openLeads);
       populateCityOptions(openLeads, "");
       renderLeadTable(openLeads, vendors);
@@ -224,7 +190,6 @@
     setStatus(`Showing ${filtered.length} leads`);
   }
 
-  // start
   init();
   </script>
 </body>
