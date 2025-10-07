@@ -21,8 +21,8 @@
   select#language { padding: 6px 10px; border-radius: 8px; border: 1px solid #333; background: #0f1424; color: var(--ink); }
   .wrap { padding: 16px; max-width: 1100px; margin: 0 auto; }
   .controls { display: grid; gap: 12px; grid-template-columns: 1fr; }
-  .row { display: grid; gap: 10px; grid-template-columns: 1fr 140px 260px 160px; }
-  input[type="text"], input[type="number"], select, button {
+  .row { display: grid; gap: 10px; grid-template-columns: 140px 260px 160px; }
+  input[type="number"], select, button {
     width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #223255; background: #0f1424; color: var(--ink);
   }
   button { background: var(--accent); border-color: transparent; color: #071121; font-weight: 600; cursor: pointer; }
@@ -30,7 +30,6 @@
   .status { margin-top: 8px; color: var(--ink-dim); font-size: 13px; }
   .grid { display: grid; gap: 16px; grid-template-columns: 1fr; margin-top: 18px; }
   @media (min-width: 900px) { .grid { grid-template-columns: 1.2fr .8fr; } }
-
   .card { background: var(--panel); border: 1px solid #1a2743; border-radius: 14px; padding: 14px; }
   .card h2 { margin: 0 0 8px; font-size: 16px; color: var(--ink); }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -59,7 +58,6 @@
 <div class="wrap">
   <div class="controls card">
     <div class="row">
-      <input id="sheetUrl" type="text" placeholder="Paste Google Sheets share URL here" value="https://docs.google.com/spreadsheets/d/1JzuAzh3l05X5kmwIY6dmTTX3kQeNH3ZTnb7oDz1Osdw/edit?usp=sharing" />
       <input id="salary" type="number" min="0" step="0.01" value="4500" title="Monthly salary (override)" />
       <select id="rateBasis">
         <option value="30">Per-day rate = salary / 30 (default)</option>
@@ -67,7 +65,7 @@
       </select>
       <button id="loadBtn">Load</button>
     </div>
-    <div class="status" id="status">Waiting for a Google Sheets URL. Sheet1 = absences (Date, Day). Sheet2 = finance (Monthly Pay, Balance, ...).</div>
+    <div class="status" id="status">Loading data from the Google Sheet...</div>
   </div>
 
   <div class="grid">
@@ -95,10 +93,12 @@
 </div>
 
 <script>
+const SHEET_ID = '1JzuAzh3l05X5kmwIY6dmTTX3kQeNH3ZTnb7oDz1Osdw';
+
 const translations = {
-  en: { title:'Absence Tracker + Monthly Deductions', absTitle:'Absence Dates', sumTitle:'Monthly Summary & Deductions', balance:'Remaining balance from Sheet2 will appear here.', waiting:'Waiting for a Google Sheets URL. Sheet1 = absences (Date, Day). Sheet2 = finance (Monthly Pay, Balance, ...).', adjustedLabel:'Next month to be paid (adjusted): '},
-  bn: { title:'অনুপস্থিতি ট্র্যাকার ও মাসিক কর্তন হিসাব', absTitle:'অনুপস্থিতির তারিখসমূহ', sumTitle:'মাসিক সারসংক্ষেপ ও কর্তন', balance:'Sheet2 থেকে বাকি ব্যালেন্স এখানে দেখা যাবে।', waiting:'গুগল শীটের লিংক দিন। Sheet1 = অনুপস্থিতি (তারিখ, দিন), Sheet2 = বেতন সংক্রান্ত তথ্য।', adjustedLabel:'আগামী মাসে প্রদানযোগ্য (সমন্বয়ের পর): '},
-  bi: { title:'Absence Tracker / অনুপস্থিতি ট্র্যাকার', absTitle:'Absence Dates / অনুপস্থিতির তারিখ', sumTitle:'Monthly Summary & Deductions / মাসিক সারসংক্ষেপ ও কর্তন', balance:'Remaining balance / Sheet2 থেকে বাকি ব্যালেন্স।', waiting:'Paste Google Sheets URL / গুগল শীটের লিংক দিন।', adjustedLabel:'Next month (adjusted) / আগামী মাসে (সমন্বয়): '}
+  en: { title:'Absence Tracker + Monthly Deductions', absTitle:'Absence Dates', sumTitle:'Monthly Summary & Deductions', balance:'Remaining balance from Sheet2 will appear here.', waiting:'Loading data from the Google Sheet...', adjustedLabel:'Next month to be paid (adjusted): '},
+  bn: { title:'অনুপস্থিতি ট্র্যাকার ও মাসিক কর্তন হিসাব', absTitle:'অনুপস্থিতির তারিখসমূহ', sumTitle:'মাসিক সারসংক্ষেপ ও কর্তন', balance:'Sheet2 থেকে বাকি ব্যালেন্স এখানে দেখা যাবে।', waiting:'গুগল শীট থেকে তথ্য লোড হচ্ছে...', adjustedLabel:'আগামী মাসে প্রদানযোগ্য (সমন্বয়ের পর): '},
+  bi: { title:'Absence Tracker / অনুপস্থিতি ট্র্যাকার', absTitle:'Absence Dates / অনুপস্থিতির তারিখ', sumTitle:'Monthly Summary & Deductions / মাসিক সারসংক্ষেপ ও কর্তন', balance:'Remaining balance / Sheet2 থেকে বাকি ব্যালেন্স।', waiting:'গুগল শীট থেকে তথ্য লোড হচ্ছে...', adjustedLabel:'Next month (adjusted) / আগামী মাসে (সমন্বয়): '}
 };
 
 let currentLang = 'en';
@@ -115,161 +115,36 @@ function setLanguage(lang){
 document.getElementById('language').addEventListener('change', e => setLanguage(e.target.value));
 setLanguage('en');
 
-// Helpers
-function extractSheetId(url){ const m=String(url).match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/); return m?m[1]:null; }
 function csvUrls(id,sheet){ return [ `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`, `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&sheet=${encodeURIComponent(sheet)}` ]; }
-
-async function fetchCSV(urls){
-  let lastErr;
-  for(const u of urls){
-    try{ const r=await fetch(u,{cache:'no-store'}); if(r.ok){ const t=await r.text(); return parseCSV(t); } lastErr = new Error(`HTTP ${r.status} ${r.statusText}`); }
-    catch(e){ lastErr=e; }
-  }
-  throw lastErr || new Error('All CSV endpoints failed');
-}
-
-// CSV parser that handles quotes and commas inside quotes
-function parseCSV(text){
-  const out=[]; let i=0, f='', row=[], inQ=false; const pushF=()=>{row.push(f); f='';}; const pushR=()=>{out.push(row); row=[];};
-  while(i<text.length){ const c=text[i];
-    if(c==='"'){ if(inQ && text[i+1]==='"'){ f+='"'; i++; } else { inQ=!inQ; } }
-    else if(c===',' && !inQ){ pushF(); }
-    else if((c==='\n'||c==='\r') && !inQ){ if(c==='\r'&&text[i+1]==='\n') i++; pushF(); pushR(); }
-    else { f+=c; }
-    i++;
-  }
-  pushF(); if(row.length) pushR();
-  if(!out.length) return [];
-  const headers = out[0].map(h=>h.trim());
-  return out.slice(1).filter(r=>r.some(v=>v && v.trim()!=='')).map(r=>{
-    const obj={}; headers.forEach((h,idx)=> obj[h]= (r[idx]||'').trim()); return obj;
-  });
-}
-
-function keyFind(obj, ...names){
-  const keys = Object.keys(obj||{});
-  for(const n of names){ const k = keys.find(k=>k.toLowerCase().trim()===n.toLowerCase().trim()); if(k) return k; }
-  return null;
-}
-
-function parseDateLoose(v){
-  const t = String(v||'').trim(); if(!t) return null; let d=new Date(t); if(!isNaN(d)) return d;
-  const m=t.match(/^(\d{1,2})[\/. -](\d{1,2})[\/. -](\d{2,4})$/); if(m){ const d1=Number(m[1]); const m1=Number(m[2]); const y1=Number(m[3].length===2?('20'+m[3]):m[3]); d=new Date(y1, m1-1, d1); if(!isNaN(d)) return d; }
-  return null;
-}
-
+async function fetchCSV(urls){ let lastErr; for(const u of urls){ try{ const r=await fetch(u,{cache:'no-store'}); if(r.ok){ const t=await r.text(); return parseCSV(t); } lastErr = new Error(`HTTP ${r.status} ${r.statusText}`);}catch(e){lastErr=e;} } throw lastErr || new Error('All CSV endpoints failed'); }
+function parseCSV(text){ const out=[]; let i=0, f='', row=[], inQ=false; const pushF=()=>{row.push(f); f='';}; const pushR=()=>{out.push(row); row=[];}; while(i<text.length){ const c=text[i]; if(c==='"'){ if(inQ && text[i+1]==='"'){ f+='"'; i++; } else { inQ=!inQ; } } else if(c===',' && !inQ){ pushF(); } else if((c==='\n'||c==='\r') && !inQ){ if(c==='\r'&&text[i+1]==='\n') i++; pushF(); pushR(); } else { f+=c; } i++; } pushF(); if(row.length) pushR(); if(!out.length) return []; const headers = out[0].map(h=>h.trim()); return out.slice(1).filter(r=>r.some(v=>v && v.trim()!=='' )).map(r=>{ const obj={}; headers.forEach((h,idx)=> obj[h]= (r[idx]||'').trim()); return obj; }); }
+function keyFind(obj, ...names){ const keys = Object.keys(obj||{}); for(const n of names){ const k = keys.find(k=>k.toLowerCase().trim()===n.toLowerCase().trim()); if(k) return k; } return null; }
+function parseDateLoose(v){ const t=String(v||'').trim(); if(!t) return null; let d=new Date(t); if(!isNaN(d)) return d; const m=t.match(/^(\d{1,2})[\/. -](\d{1,2})[\/. -](\d{2,4})$/); if(m){ const d1=Number(m[1]); const m1=Number(m[2]); const y1=Number(m[3].length===2?('20'+m[3]):m[3]); d=new Date(y1,m1-1,d1); if(!isNaN(d)) return d; } return null; }
 function monthKey(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,'0'); }
 function monthLabel(k){ const parts=k.split('-'); const y=Number(parts[0]); const m=Number(parts[1]); return new Date(y,m-1,1).toLocaleDateString(undefined,{month:'long',year:'numeric'}); }
 function daysInMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate(); }
 function currency(n){ return Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-// Rendering
-function renderDates(records){
-  const body = document.querySelector('#datesTable tbody');
-  body.innerHTML = records.map((r,i)=>`<tr><td>${i+1}</td><td>${r.date.toLocaleDateString()}</td><td>${r.day}</td><td class=\"right\">${monthLabel(r.mkey)}</td></tr>`).join('') || `<tr><td colspan=\"4\" class=\"muted\">No valid dates found in Sheet1.</td></tr>`;
-}
+function renderDates(records){ const body=document.querySelector('#datesTable tbody'); body.innerHTML=records.map((r,i)=>`<tr><td>${i+1}</td><td>${r.date.toLocaleDateString()}</td><td>${r.day}</td><td class='right'>${monthLabel(r.mkey)}</td></tr>`).join('') || `<tr><td colspan='4' class='muted'>No valid dates found in Sheet1.</td></tr>`; }
+function renderSummary(records,salary,basis){ const body=document.querySelector('#summaryTable tbody'); const byMonth=new Map(); for(const r of records){ if(!byMonth.has(r.mkey)) byMonth.set(r.mkey, []); byMonth.get(r.mkey).push(r);} let totalAbs=0,totalDed=0; const rows=[]; for(const [mkey,items] of [...byMonth.entries()].sort()){ const any=items[0].date; const perDay=basis==='calendar'?(salary/daysInMonth(any)):(salary/30); const count=items.length; const ded=perDay*count; totalAbs+=count; totalDed+=ded; rows.push(`<tr><td>${monthLabel(mkey)}</td><td class='right'>${count}</td><td class='right money'>${currency(perDay)}</td><td class='right money bad'>-${currency(ded)}</td><td class='right money'>${currency(Math.max(0,salary-ded))}</td></tr>`);} body.innerHTML=rows.join('')||`<tr><td colspan='5' class='muted'>No absences to summarize.</td></tr>`; document.getElementById('totals').innerHTML=`<span class='pill'>Total absences: ${totalAbs}</span><span class='pill bad'>Total deduction: -${currency(totalDed)}</span><span class='pill'>Monthly salary: ${currency(salary)}</span>`; return{totalAbs,totalDed}; }
+function renderBalance(sheet2,totals){ let msg=''; let highlight=''; const t=translations[currentLang]; if(sheet2.length){ const row=sheet2[0]; const balKey=keyFind(row,'Balance','Remaining Balance','RemainingBalance','Other misconceptions. balance'); const nextPayKey=keyFind(row,'Next Month to be paid','Next To Pay'); const lastPaidKey=keyFind(row,'Last Month Paid','Last Paid'); const bal=balKey?Number(String(row[balKey]).replace(/[^\d.-]/g,'')):NaN; const nextToPay=nextPayKey?Number(String(row[nextPayKey]).replace(/[^\d.-]/g,'')):NaN; const lastPaid=lastPaidKey?Number(String(row[lastPaidKey]).replace(/[^\d.-]/g,'')):NaN; if(!isNaN(bal)){ const after=bal-totals.totalDed; msg=`Balance (Sheet2): ${currency(bal)}. Total deductions: ${currency(totals.totalDed)}. After deductions: ${currency(after)}.`; if(!isNaN(lastPaid)) msg+=` Last month paid: ${currency(lastPaid)}.`;} if(!isNaN(nextToPay)){ const adjusted=nextToPay-totals.totalDed; highlight=`${t.adjustedLabel}${currency(adjusted)}`;} } else { msg='Sheet2 appears empty. Skipping remaining balance.';} document.getElementById('balanceStatus').textContent=msg; document.getElementById('nextPayBig').textContent=highlight; }
 
-function renderSummary(records, salary, basis){
-  const body = document.querySelector('#summaryTable tbody');
-  const byMonth = new Map();
-  for(const r of records){ if(!byMonth.has(r.mkey)) byMonth.set(r.mkey, []); byMonth.get(r.mkey).push(r); }
-  let totalAbs=0, totalDed=0; const rows=[];
-  for(const [mkey, items] of [...byMonth.entries()].sort()){
-    const any = items[0].date;
-    const perDay = basis==='calendar' ? (salary / daysInMonth(any)) : (salary / 30);
-    const count = items.length;
-    const ded = perDay * count;
-    totalAbs += count; totalDed += ded;
-    rows.push(`<tr><td>${monthLabel(mkey)}</td><td class=\"right\">${count}</td><td class=\"right money\">${currency(perDay)}</td><td class=\"right money bad\">-${currency(ded)}</td><td class=\"right money\">${currency(Math.max(0, salary - ded))}</td></tr>`);
-  }
-  body.innerHTML = rows.join('') || `<tr><td colspan=\"5\" class=\"muted\">No absences to summarize.</td></tr>`;
-  document.getElementById('totals').innerHTML = `<span class=\"pill\">Total absences: ${totalAbs}</span><span class=\"pill bad\">Total deduction: -${currency(totalDed)}</span><span class=\"pill\">Monthly salary: ${currency(salary)}</span><span class=\"pill\">Rate basis: ${document.getElementById('rateBasis').selectedOptions[0].textContent}</span>`;
-  return { totalAbs, totalDed };
-}
-
-function renderBalance(sheet2, totals){
-  let msg = '';
-  let highlight = '';
-  const t = translations[currentLang];
-  if(sheet2.length){
-    const row = sheet2[0];
-    const payKey = keyFind(row, 'Monthly Pay','MonthlyPay','Monthly Salary');
-    const balKey = keyFind(row, 'Balance','Remaining Balance','RemainingBalance','Other misconceptions. balance');
-    const lastPaidKey = keyFind(row, 'Last Month Paid','Last Paid');
-    const nextPayKey = keyFind(row, 'Next Month to be paid','Next To Pay');
-
-    const bal = balKey ? Number(String(row[balKey]).replace(/[^\d.-]/g,'')) : NaN;
-    const nextToPay = nextPayKey ? Number(String(row[nextPayKey]).replace(/[^\d.-]/g,'')) : NaN;
-    const lastPaid = lastPaidKey ? Number(String(row[lastPaidKey]).replace(/[^\d.-]/g,'')) : NaN;
-
-    if(!isNaN(bal)){
-      const after = bal - totals.totalDed;
-      msg = `Balance (Sheet2): ${currency(bal)}. Total deductions: ${currency(totals.totalDed)}. After deductions: ${currency(after)}.`;
-      if(!isNaN(lastPaid)) msg += ` Last month paid: ${currency(lastPaid)}.`;
-    } else {
-      msg = 'Sheet2 loaded but no recognizable Balance field found.';
-    }
-
-    // Highlight: next month to be paid adjusted by total deduction
-    if(!isNaN(nextToPay)){
-      const adjusted = nextToPay - totals.totalDed;
-      highlight = `${t.adjustedLabel}${currency(adjusted)}`;
-    }
-  } else {
-    msg = 'Sheet2 appears empty. Skipping remaining balance.';
-  }
-  document.getElementById('balanceStatus').textContent = msg;
-  document.getElementById('nextPayBig').textContent = highlight;
-}
-
-// Main load
 const btn=document.getElementById('loadBtn');
 btn.onclick=async()=>{
-  const id=extractSheetId(document.getElementById('sheetUrl').value);
-  if(!id){ document.getElementById('status').textContent='Invalid Sheet URL'; return; }
   btn.disabled=true; document.getElementById('status').textContent='Loading...';
   try{
-    const [sheet1, sheet2] = await Promise.all([
-      fetchCSV(csvUrls(id,'Sheet1')),
-      fetchCSV(csvUrls(id,'Sheet2'))
+    const [sheet1,sheet2]=await Promise.all([
+      fetchCSV(csvUrls(SHEET_ID,'Sheet1')),
+      fetchCSV(csvUrls(SHEET_ID,'Sheet2'))
     ]);
-
-    // Salary: prefer Sheet2 Monthly Pay if present, else input value
-    let salary = Number(document.getElementById('salary').value || 0);
-    if(sheet2.length){
-      const payKey = keyFind(sheet2[0], 'Monthly Pay','MonthlyPay','Monthly Salary');
-      if(payKey){ const s = Number(String(sheet2[0][payKey]).replace(/[^\d.-]/g,'')); if(!isNaN(s) && s>0){ salary = s; document.getElementById('salary').value = String(s); } }
-    }
-
-    // Build records from Sheet1
+    let salary=Number(document.getElementById('salary').value||0);
+    if(sheet2.length){ const payKey=keyFind(sheet2[0],'Monthly Pay','MonthlyPay','Monthly Salary'); if(payKey){ const s=Number(String(sheet2[0][payKey]).replace(/[^\d.-]/g,'')); if(!isNaN(s)&&s>0){ salary=s; document.getElementById('salary').value=String(s);} } }
     if(!sheet1.length) throw new Error('Sheet1 appears empty.');
-    const dKey = keyFind(sheet1[0], 'Date','Absence Date','Absent Date');
-    let dayKey = keyFind(sheet1[0], 'Day');
-    if(!dKey) throw new Error("Sheet1 needs a 'Date' column.");
-
-    const records = [];
-    sheet1.forEach((r, idx)=>{
-      const d = parseDateLoose(r[dKey]||''); if(!d) return; // skip invalid
-      let dayName = dayKey ? (r[dayKey]||'') : '';
-      if(!dayName) dayName = d.toLocaleDateString(undefined,{weekday:'long'});
-      records.push({ idx: idx+1, date: d, day: dayName, mkey: monthKey(d) });
-    });
-    records.sort((a,b)=> a.date - b.date);
-
-    renderDates(records);
-    const totals = renderSummary(records, salary, document.getElementById('rateBasis').value);
-    renderBalance(sheet2, totals);
-
-    document.getElementById('status').textContent='Sheets loaded successfully';
-  }catch(e){
-    console.error(e);
-    document.getElementById('status').textContent='Error loading: '+e.message;
-    document.querySelector('#datesTable tbody').innerHTML='';
-    document.querySelector('#summaryTable tbody').innerHTML='';
-    document.getElementById('totals').innerHTML='';
-    document.getElementById('nextPayBig').textContent='';
-    document.getElementById('balanceStatus').textContent='';
-  }finally{ btn.disabled=false; }
+    const dKey=keyFind(sheet1[0],'Date','Absence Date','Absent Date'); let dayKey=keyFind(sheet1[0],'Day'); if(!dKey) throw new Error("Sheet1 needs a 'Date' column.");
+    const records=[]; sheet1.forEach((r,idx)=>{ const d=parseDateLoose(r[dKey]||''); if(!d)return; let dayName=dayKey?(r[dayKey]||''):''; if(!dayName) dayName=d.toLocaleDateString(undefined,{weekday:'long'}); records.push({idx:idx+1,date:d,day:dayName,mkey:monthKey(d)}); }); records.sort((a,b)=>a.date-b.date);
+    renderDates(records); const totals=renderSummary(records,salary,document.getElementById('rateBasis').value); renderBalance(sheet2,totals); document.getElementById('status').textContent='Sheets loaded successfully';
+  }catch(e){ console.error(e); document.getElementById('status').textContent='Error loading: '+e.message; document.querySelector('#datesTable tbody').innerHTML=''; document.querySelector('#summaryTable tbody').innerHTML=''; document.getElementById('totals').innerHTML=''; document.getElementById('nextPayBig').textContent=''; document.getElementById('balanceStatus').textContent=''; }
+  finally{ btn.disabled=false; }
 };
 </script>
 </body>
