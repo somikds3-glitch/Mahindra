@@ -33,18 +33,16 @@
 
   .card { background: var(--panel); border: 1px solid #1a2743; border-radius: 14px; padding: 14px; }
   .card h2 { margin: 0 0 8px; font-size: 16px; color: var(--ink); }
-  .meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--ink-dim); }
-  .pill { background: #0e1730; border: 1px solid #23345f; padding: 4px 8px; border-radius: 999px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #1a2743; }
   th { color: var(--ink-dim); font-weight: 600; }
   .right { text-align: right; }
   .money { font-variant-numeric: tabular-nums; }
-  .good { color: var(--green); }
   .bad { color: var(--red); }
   .totals { display: flex; gap: 12px; flex-wrap: wrap; margin: 10px 0 0; }
   .totals .pill { font-weight: 600; }
   .muted { color: var(--ink-dim); }
+  .pill { background: #0e1730; border: 1px solid #23345f; padding: 4px 8px; border-radius: 999px; }
 </style>
 </head>
 <body>
@@ -96,27 +94,9 @@
 
 <script>
 const translations = {
-  en: {
-    title: 'Absence Tracker + Monthly Deductions',
-    absTitle: 'Absence Dates',
-    sumTitle: 'Monthly Summary & Deductions',
-    balance: 'Remaining balance from Sheet2 will appear here.',
-    waiting: 'Waiting for a Google Sheets URL. Sheet1 = absences (Date, Day). Sheet2 = finance (Monthly Pay, Balance, ...).'
-  },
-  bn: {
-    title: 'অনুপস্থিতি ট্র্যাকার ও মাসিক কর্তন হিসাব',
-    absTitle: 'অনুপস্থিতির তারিখসমূহ',
-    sumTitle: 'মাসিক সারসংক্ষেপ ও কর্তন',
-    balance: 'Sheet2 থেকে বাকি ব্যালেন্স এখানে দেখা যাবে।',
-    waiting: 'গুগল শীটের লিংক দিন। Sheet1 = অনুপস্থিতি (তারিখ, দিন), Sheet2 = বেতন সংক্রান্ত তথ্য।'
-  },
-  bi: {
-    title: 'Absence Tracker / অনুপস্থিতি ট্র্যাকার',
-    absTitle: 'Absence Dates / অনুপস্থিতির তারিখ',
-    sumTitle: 'Monthly Summary & Deductions / মাসিক সারসংক্ষেপ ও কর্তন',
-    balance: 'Remaining balance / Sheet2 থেকে বাকি ব্যালেন্স।',
-    waiting: 'Paste Google Sheets URL / গুগল শীটের লিংক দিন।'
-  }
+  en: { title:'Absence Tracker + Monthly Deductions', absTitle:'Absence Dates', sumTitle:'Monthly Summary & Deductions', balance:'Remaining balance from Sheet2 will appear here.', waiting:'Waiting for a Google Sheets URL. Sheet1 = absences (Date, Day). Sheet2 = finance (Monthly Pay, Balance, ...).'},
+  bn: { title:'অনুপস্থিতি ট্র্যাকার ও মাসিক কর্তন হিসাব', absTitle:'অনুপস্থিতির তারিখসমূহ', sumTitle:'মাসিক সারসংক্ষেপ ও কর্তন', balance:'Sheet2 থেকে বাকি ব্যালেন্স এখানে দেখা যাবে।', waiting:'গুগল শীটের লিংক দিন। Sheet1 = অনুপস্থিতি (তারিখ, দিন), Sheet2 = বেতন সংক্রান্ত তথ্য।'},
+  bi: { title:'Absence Tracker / অনুপস্থিতি ট্র্যাকার', absTitle:'Absence Dates / অনুপস্থিতির তারিখ', sumTitle:'Monthly Summary & Deductions / মাসিক সারসংক্ষেপ ও কর্তন', balance:'Remaining balance / Sheet2 থেকে বাকি ব্যালেন্স।', waiting:'Paste Google Sheets URL / গুগল শীটের লিংক দিন।'}
 };
 
 function setLanguage(lang){
@@ -128,11 +108,34 @@ function setLanguage(lang){
   document.getElementById('status').textContent = t.waiting;
 }
 
-document.getElementById('language').addEventListener('change', e => {
-  setLanguage(e.target.value);
-});
-
+document.getElementById('language').addEventListener('change', e => setLanguage(e.target.value));
 setLanguage('en');
+
+function extractSheetId(url){ const m=String(url).match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/); return m?m[1]:null; }
+function csvUrls(id,sheet){ return [ `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${sheet}`, `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&sheet=${sheet}` ]; }
+
+async function fetchCSV(urls){ for(const u of urls){ try{ const r=await fetch(u,{cache:'no-store'}); if(r.ok)return parseCSV(await r.text()); }catch(e){console.warn('fail',u,e);} } throw new Error('All CSV endpoints failed.'); }
+
+function parseCSV(text){const lines=text.split(/\r?\n/).filter(Boolean);const h=lines.shift().split(',');return lines.map(l=>{const v=l.split(',');const o={};h.forEach((hh,i)=>o[hh.trim()]=v[i]?v[i].trim():'');return o;});}
+function parseDate(v){const t=v.trim();const d=new Date(t);if(!isNaN(d))return d;const m=t.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);if(m){return new Date(m[3],m[2]-1,m[1]);}return null;}
+function monthKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function monthLabel(k){const[y,m]=k.split('-');return new Date(y,m-1,1).toLocaleString(undefined,{month:'long',year:'numeric'});} 
+function currency(n){return Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+
+const btn=document.getElementById('loadBtn');
+btn.onclick=async()=>{
+  const id=extractSheetId(document.getElementById('sheetUrl').value);
+  if(!id){document.getElementById('status').textContent='Invalid Sheet URL';return;}
+  btn.disabled=true;document.getElementById('status').textContent='Loading...';
+  try{
+    const sheet1=await fetchCSV(csvUrls(id,'Sheet1'));
+    const sheet2=await fetchCSV(csvUrls(id,'Sheet2'));
+    document.getElementById('status').textContent='Sheets loaded successfully';
+    console.log(sheet1,sheet2);
+  }catch(e){
+    document.getElementById('status').textContent='Error loading: '+e.message;
+  }finally{btn.disabled=false;}
+};
 </script>
 </body>
 </html>
