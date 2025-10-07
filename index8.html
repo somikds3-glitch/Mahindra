@@ -111,30 +111,152 @@ function setLanguage(lang){
 document.getElementById('language').addEventListener('change', e => setLanguage(e.target.value));
 setLanguage('en');
 
+// Helpers
 function extractSheetId(url){ const m=String(url).match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/); return m?m[1]:null; }
-function csvUrls(id,sheet){ return [ `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${sheet}`, `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&sheet=${sheet}` ]; }
+function csvUrls(id,sheet){ return [ `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`, `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&sheet=${encodeURIComponent(sheet)}` ]; }
 
-async function fetchCSV(urls){ for(const u of urls){ try{ const r=await fetch(u,{cache:'no-store'}); if(r.ok)return parseCSV(await r.text()); }catch(e){console.warn('fail',u,e);} } throw new Error('All CSV endpoints failed.'); }
+async function fetchCSV(urls){
+  let lastErr;
+  for(const u of urls){
+    try{ const r=await fetch(u,{cache:'no-store'}); if(r.ok){ const t=await r.text(); return parseCSV(t); } lastErr = new Error(`HTTP ${r.status} ${r.statusText}`); }
+    catch(e){ lastErr=e; }
+  }
+  throw lastErr || new Error('All CSV endpoints failed');
+}
 
-function parseCSV(text){const lines=text.split(/\r?\n/).filter(Boolean);const h=lines.shift().split(',');return lines.map(l=>{const v=l.split(',');const o={};h.forEach((hh,i)=>o[hh.trim()]=v[i]?v[i].trim():'');return o;});}
-function parseDate(v){const t=v.trim();const d=new Date(t);if(!isNaN(d))return d;const m=t.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);if(m){return new Date(m[3],m[2]-1,m[1]);}return null;}
-function monthKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
-function monthLabel(k){const[y,m]=k.split('-');return new Date(y,m-1,1).toLocaleString(undefined,{month:'long',year:'numeric'});} 
-function currency(n){return Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+// CSV parser that handles quotes and commas inside quotes
+function parseCSV(text){
+  const out=[]; let i=0, f='', row=[], inQ=false; const pushF=()=>{row.push(f); f='';}; const pushR=()=>{out.push(row); row=[];};
+  while(i<text.length){ const c=text[i];
+    if(c==='"'){ if(inQ && text[i+1]==='"'){ f+='"'; i++; } else { inQ=!inQ; } }
+    else if(c===',' && !inQ){ pushF(); }
+    else if((c==='\n'||c==='\r') && !inQ){ if(c==='\r'&&text[i+1]==='\n') i++; pushF(); pushR(); }
+    else { f+=c; }
+    i++;
+  }
+  pushF(); if(row.length) pushR();
+  if(!out.length) return [];
+  const headers = out[0].map(h=>h.trim());
+  return out.slice(1).filter(r=>r.some(v=>v && v.trim()!=='')).map(r=>{
+    const obj={}; headers.forEach((h,idx)=> obj[h]= (r[idx]||'').trim()); return obj;
+  });
+}
 
+function keyFind(obj, ...names){
+  const keys = Object.keys(obj||{});
+  for(const n of names){ const k = keys.find(k=>k.toLowerCase().trim()===n.toLowerCase().trim()); if(k) return k; }
+  return null;
+}
+
+function parseDateLoose(v){
+  const t = String(v||'').trim(); if(!t) return null; let d=new Date(t); if(!isNaN(d)) return d;
+  const m=t.match(/^(\d{1,2})[\/. -](\d{1,2})[\/. -](\d{2,4})$/); if(m){ const d1=Number(m[1]); const m1=Number(m[2]); const y1=Number(m[3].length===2?('20'+m[3]):m[3]); d=new Date(y1, m1-1, d1); if(!isNaN(d)) return d; }
+  return null;
+}
+
+function monthKey(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,'0'); }
+function monthLabel(k){ const parts=k.split('-'); const y=Number(parts[0]); const m=Number(parts[1]); return new Date(y,m-1,1).toLocaleDateString(undefined,{month:'long',year:'numeric'}); }
+function daysInMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate(); }
+function currency(n){ return Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+// Rendering
+function renderDates(records){
+  const body = document.querySelector('#datesTable tbody');
+  body.innerHTML = records.map((r,i)=>`<tr><td>${i+1}</td><td>${r.date.toLocaleDateString()}</td><td>${r.day}</td><td class="right">${monthLabel(r.mkey)}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">No valid dates found in Sheet1.</td></tr>`;
+}
+
+function renderSummary(records, salary, basis){
+  const body = document.querySelector('#summaryTable tbody');
+  const byMonth = new Map();
+  for(const r of records){ if(!byMonth.has(r.mkey)) byMonth.set(r.mkey, []); byMonth.get(r.mkey).push(r); }
+  let totalAbs=0, totalDed=0; const rows=[];
+  for(const [mkey, items] of [...byMonth.entries()].sort()){
+    const any = items[0].date;
+    const perDay = basis==='calendar' ? (salary / daysInMonth(any)) : (salary / 30);
+    const count = items.length;
+    const ded = perDay * count;
+    totalAbs += count; totalDed += ded;
+    rows.push(`<tr><td>${monthLabel(mkey)}</td><td class="right">${count}</td><td class="right money">${currency(perDay)}</td><td class="right money bad">-${currency(ded)}</td><td class="right money">${currency(Math.max(0, salary - ded))}</td></tr>`);
+  }
+  body.innerHTML = rows.join('') || `<tr><td colspan="5" class="muted">No absences to summarize.</td></tr>`;
+  document.getElementById('totals').innerHTML = `<span class="pill">Total absences: ${totalAbs}</span><span class="pill bad">Total deduction: -${currency(totalDed)}</span><span class="pill">Monthly salary: ${currency(salary)}</span><span class="pill">Rate basis: ${document.getElementById('rateBasis').selectedOptions[0].textContent}</span>`;
+  return { totalAbs, totalDed };
+}
+
+function renderBalance(sheet2, totals){
+  let msg = '';
+  if(sheet2.length){
+    const row = sheet2[0];
+    const payKey = keyFind(row, 'Monthly Pay','MonthlyPay','Monthly Salary');
+    const balKey = keyFind(row, 'Balance','Remaining Balance','RemainingBalance','Other misconceptions. balance');
+    const lastPaidKey = keyFind(row, 'Last Month Paid','Last Paid');
+    const nextPayKey = keyFind(row, 'Next Month to be paid','Next To Pay');
+
+    const bal = balKey ? Number(String(row[balKey]).replace(/[^\d.-]/g,'')) : NaN;
+    const lastPaid = lastPaidKey ? Number(String(row[lastPaidKey]).replace(/[^\d.-]/g,'')) : NaN;
+    const nextToPay = nextPayKey ? Number(String(row[nextPayKey]).replace(/[^\d.-]/g,'')) : NaN;
+
+    if(!isNaN(bal)){
+      const after = bal - totals.totalDed;
+      msg = `Balance (Sheet2): ${currency(bal)}. Total deductions: ${currency(totals.totalDed)}. After deductions: ${currency(after)}.`;
+      if(!isNaN(lastPaid)) msg += ` Last month paid: ${currency(lastPaid)}.`;
+      if(!isNaN(nextToPay)) msg += ` Next month to be paid: ${currency(nextToPay)}.`;
+    } else {
+      msg = 'Sheet2 loaded but no recognizable Balance field found.';
+    }
+  } else {
+    msg = 'Sheet2 appears empty. Skipping remaining balance.';
+  }
+  document.getElementById('balanceStatus').textContent = msg;
+}
+
+// Main load
 const btn=document.getElementById('loadBtn');
 btn.onclick=async()=>{
   const id=extractSheetId(document.getElementById('sheetUrl').value);
-  if(!id){document.getElementById('status').textContent='Invalid Sheet URL';return;}
-  btn.disabled=true;document.getElementById('status').textContent='Loading...';
+  if(!id){ document.getElementById('status').textContent='Invalid Sheet URL'; return; }
+  btn.disabled=true; document.getElementById('status').textContent='Loading...';
   try{
-    const sheet1=await fetchCSV(csvUrls(id,'Sheet1'));
-    const sheet2=await fetchCSV(csvUrls(id,'Sheet2'));
+    const [sheet1, sheet2] = await Promise.all([
+      fetchCSV(csvUrls(id,'Sheet1')),
+      fetchCSV(csvUrls(id,'Sheet2'))
+    ]);
+
+    // Salary: prefer Sheet2 Monthly Pay if present, else input value
+    let salary = Number(document.getElementById('salary').value || 0);
+    if(sheet2.length){
+      const payKey = keyFind(sheet2[0], 'Monthly Pay','MonthlyPay','Monthly Salary');
+      if(payKey){ const s = Number(String(sheet2[0][payKey]).replace(/[^\d.-]/g,'')); if(!isNaN(s) && s>0){ salary = s; document.getElementById('salary').value = String(s); } }
+    }
+
+    // Build records from Sheet1
+    if(!sheet1.length) throw new Error('Sheet1 appears empty.');
+    const dKey = keyFind(sheet1[0], 'Date','Absence Date','Absent Date');
+    let dayKey = keyFind(sheet1[0], 'Day');
+    if(!dKey) throw new Error("Sheet1 needs a 'Date' column.");
+
+    const records = [];
+    sheet1.forEach((r, idx)=>{
+      const d = parseDateLoose(r[dKey]||''); if(!d) return; // skip invalid
+      let dayName = dayKey ? (r[dayKey]||'') : '';
+      if(!dayName) dayName = d.toLocaleDateString(undefined,{weekday:'long'});
+      records.push({ idx: idx+1, date: d, day: dayName, mkey: monthKey(d) });
+    });
+    records.sort((a,b)=> a.date - b.date);
+
+    renderDates(records);
+    const totals = renderSummary(records, salary, document.getElementById('rateBasis').value);
+    renderBalance(sheet2, totals);
+
     document.getElementById('status').textContent='Sheets loaded successfully';
-    console.log(sheet1,sheet2);
   }catch(e){
+    console.error(e);
     document.getElementById('status').textContent='Error loading: '+e.message;
-  }finally{btn.disabled=false;}
+    document.querySelector('#datesTable tbody').innerHTML='';
+    document.querySelector('#summaryTable tbody').innerHTML='';
+    document.getElementById('totals').innerHTML='';
+    document.getElementById('balanceStatus').textContent='';
+  }finally{ btn.disabled=false; }
 };
 </script>
 </body>
