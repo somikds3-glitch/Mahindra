@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Absence Tracker + Deductions (Google Sheets)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #0b0f19;
+    --panel: #10182b;
+    --ink: #e8efff;
+    --ink-dim: #bcd0ff;
+    --accent: #71a1ff;
+    --red: #ff6b6b;
+    --green: #2ecc71;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background: var(--bg); color: var(--ink); }
+  header { padding: 18px 20px; background: #11182a; border-bottom: 1px solid #1a2743; }
+  header h1 { margin: 0; font-size: 18px; }
+  .wrap { padding: 16px; max-width: 1100px; margin: 0 auto; }
+  .controls { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  .row { display: grid; gap: 10px; grid-template-columns: 1fr 140px 260px 160px; }
+  input[type="text"], input[type="number"], select, button {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #223255; background: #0f1424; color: var(--ink);
+  }
+  button { background: var(--accent); border-color: transparent; color: #071121; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+  .status { margin-top: 8px; color: var(--ink-dim); font-size: 13px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: 1fr; margin-top: 18px; }
+  @media (min-width: 900px) { .grid { grid-template-columns: 1.2fr .8fr; } }
+
+  .card { background: var(--panel); border: 1px solid #1a2743; border-radius: 14px; padding: 14px; }
+  .card h2 { margin: 0 0 8px; font-size: 16px; color: var(--ink); }
+  .meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--ink-dim); }
+  .pill { background: #0e1730; border: 1px solid #23345f; padding: 4px 8px; border-radius: 999px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #1a2743; }
+  th { color: var(--ink-dim); font-weight: 600; }
+  .right { text-align: right; }
+  .money { font-variant-numeric: tabular-nums; }
+  .good { color: var(--green); }
+  .bad { color: var(--red); }
+  .totals { display: flex; gap: 12px; flex-wrap: wrap; margin: 10px 0 0; }
+  .totals .pill { font-weight: 600; }
+  .muted { color: var(--ink-dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Absence Tracker + Monthly Deductions</h1>
+</header>
+
+<div class="wrap">
+  <div class="controls card">
+    <div class="row">
+      <input id="sheetUrl" type="text" placeholder="Paste Google Sheets share URL here" value="https://docs.google.com/spreadsheets/d/1JzuAzh3l05X5kmwIY6dmTTX3kQeNH3ZTnb7oDz1Osdw/edit?usp=sharing" />
+      <input id="salary" type="number" min="0" step="0.01" value="4500" title="Monthly salary (override)" />
+      <select id="rateBasis">
+        <option value="30">Per-day rate = salary / 30 (default)</option>
+        <option value="calendar">Per-day rate = salary / calendar days in month</option>
+      </select>
+      <button id="loadBtn">Load</button>
+    </div>
+    <div class="status" id="status">Waiting for a Google Sheets URL. Sheet1 = absences (Date, Day). Sheet2 = finance (Monthly Pay, Balance, ...).</div>
+    <div class="meta">
+      <span class="pill">Sheet1 columns: Date, Day</span>
+      <span class="pill">Sheet2 columns: Monthly Pay, Balance (others optional)</span>
+      <span class="pill">Weekday auto-derives if missing</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Absence Dates</h2>
+      <table id="datesTable">
+        <thead><tr><th>#</th><th>Date</th><th>Day</th><th class="right">Month</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Monthly Summary & Deductions</h2>
+      <table id="summaryTable">
+        <thead><tr>
+          <th>Month</th><th class="right">Absences</th><th class="right">Per-day rate</th><th class="right">Deduction</th><th class="right">Net Salary</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="totals" id="totals"></div>
+      <div class="status muted" id="balanceStatus">Remaining balance from Sheet2 will appear here.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = s => document.querySelector(s);
+  const status = $("#status");
+  const loadBtn = $("#loadBtn");
+  const datesTbody = $("#datesTable tbody");
+  const summaryTbody = $("#summaryTable tbody");
+  const totalsBox = $("#totals");
+  const balanceStatus = $("#balanceStatus");
+
+  function setStatus(msg){ status.textContent = msg; }
+
+  function extractSheetId(url){
+    const m = String(url).match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    return m ? m[1] : null;
+  }
+  function csvUrl(id, sheetName){
+    return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+  }
+
+  // CSV parser that handles quotes
+  function parseCSV(text){
+    const rows = [];
+    let i = 0, field = '', row = [], inQuotes = false;
+    function pushField(){ row.push(field); field = ''; }
+    function pushRow(){ rows.push(row); row = []; }
+
+    while(i < text.length){
+      const c = text[i];
+      if (c === '"'){
+        if (inQuotes && text[i+1] === '"'){ field += '"'; i++; }
+        else { inQuotes = !inQuotes; }
+      } else if (c === ',' && !inQuotes){
+        pushField();
+      } else if ((c === '\n' || c === '\r') && !inQuotes){
+        if (c === '\r' && text[i+1] === '\n') i++;
+        pushField(); pushRow();
+      } else {
+        field += c;
+      }
+      i++;
+    }
+    pushField(); if (row.length > 1 || (row.length === 1 && row[0] !== '')) pushRow();
+
+    if (!rows.length) return [];
+    const headers = rows[0].map(h => h.trim());
+    return rows.slice(1).map(r => {
+      const obj = {};
+      headers.forEach((h, idx) => obj[h] = (r[idx] ?? '').trim());
+      return obj;
+    });
+  }
+
+  function parseDateLoose(v){
+    const t = String(v || '').trim();
+    if (!t) return null;
+    let d = new Date(t);
+    if (!isNaN(d)) return d;
+    const m = t.match(/^(\d{1,2})[\/. -](\d{1,2})[\/. -](\d{2,4})$/);
+    if (m){
+      const [_, d1, m1, y1] = m;
+      d = new Date(Number(y1.length === 2 ? '20'+y1 : y1), Number(m1)-1, Number(d1));
+      if (!isNaN(d)) return d;
+    }
+    return null;
+  }
+
+  function monthKey(d){
+    const y = d.getFullYear();
+    const m = d.getMonth()+1;
+    return `${y}-${String(m).padStart(2,'0')}`;
+  }
+  function monthLabel(key){
+    const [y,m] = key.split('-').map(Number);
+    return new Date(y, m-1, 1).toLocaleDateString(undefined, { year:'numeric', month:'long' });
+  }
+  function daysInMonth(d){
+    return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  }
+  function currency(n){ return Number(n || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+  async function fetchCSV(url){
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok){
+      const txt = await res.text().catch(()=> '');
+      throw new Error(`HTTP ${res.status} ${res.statusText} — ${txt.slice(0,120)}`);
+    }
+    const text = await res.text();
+    return parseCSV(text);
+  }
+
+  function keyFind(obj, ...names){
+    const keys = Object.keys(obj);
+    for (const n of names){
+      const k = keys.find(k => k.toLowerCase().trim() === n.toLowerCase().trim());
+      if (k) return k;
+    }
+    return null;
+  }
+
+  async function loadAll(){
+    try{
+      loadBtn.disabled = true;
+      setStatus("Loading sheets…");
+      datesTbody.innerHTML = ""; summaryTbody.innerHTML = ""; totalsBox.innerHTML = ""; balanceStatus.textContent = "";
+
+      const url = $("#sheetUrl").value.trim();
+      const id = extractSheetId(url);
+      if (!id) throw new Error("Invalid Google Sheets URL. Paste a link like https://docs.google.com/spreadsheets/d/<ID>/edit");
+
+      const basis = $("#rateBasis").value;
+
+      const [sheet1, sheet2] = await Promise.all([
+        fetchCSV(csvUrl(id, "Sheet1")),
+        fetchCSV(csvUrl(id, "Sheet2")),
+      ]);
+
+      // Salary from Sheet2 (override input if present)
+      let salary = Number($("#salary").value || 0);
+      if (sheet2.length){
+        const payKey = keyFind(sheet2[0], "Monthly Pay", "MonthlyPay", "Monthly Salary");
+        if (payKey){
+          const sRaw = sheet2[0][payKey];
+          const sVal = Number(String(sRaw).replace(/[^\d.-]/g,''));
+          if (!isNaN(sVal) && sVal > 0){ salary = sVal; $("#salary").value = String(sVal); }
+        }
+      }
+
+      // Read absences (Sheet1)
+      if (!sheet1.length) throw new Error("Sheet1 appears empty.");
+      const dKey = keyFind(sheet1[0], "Date", "Absence Date", "Absent Date");
+      let dayKey = keyFind(sheet1[0], "Day");
+      if (!dKey) throw new Error("Sheet1 needs a 'Date' column.");
+
+      const records = [];
+      sheet1.forEach((r, idx) => {
+        const d = parseDateLoose(r[dKey] || "");
+        if (!d) return; // skip bad rows
+        let dayName = dayKey ? (r[dayKey] || "") : "";
+        if (!dayName) dayName = d.toLocaleDateString(undefined, { weekday: 'long' });
+        records.push({ idx: idx+1, date: d, day: dayName, mkey: monthKey(d) });
+      });
+      records.sort((a,b)=> a.date - b.date);
+
+      // Render dates
+      const dtRows = records.map((r,i)=> {
+        return `<tr>
+          <td>${i+1}</td>
+          <td>${r.date.toLocaleDateString()}</td>
+          <td>${r.day}</td>
+          <td class="right">${monthLabel(r.mkey)}</td>
+        </tr>`;
+      }).join("");
+      datesTbody.innerHTML = dtRows || `<tr><td colspan="4" class="muted">No valid dates found in Sheet1.</td></tr>`;
+
+      // Group by month and compute deductions
+      const byMonth = new Map();
+      for (const r of records){
+        if (!byMonth.has(r.mkey)) byMonth.set(r.mkey, []);
+        byMonth.get(r.mkey).push(r);
+      }
+
+      let totalAbsences = 0;
+      let totalDeduction = 0;
+      const sumRows = [];
+      for (const [mkey, rows] of [...byMonth.entries()].sort()){
+        const anyDate = rows[0].date;
+        const perDay = (basis === 'calendar') ? (salary / daysInMonth(anyDate)) : (salary / 30);
+        const count = rows.length;
+        const deduction = perDay * count;
+        totalAbsences += count;
+        totalDeduction += deduction;
+        sumRows.push(`<tr>
+          <td>${monthLabel(mkey)}</td>
+          <td class="right">${count}</td>
+          <td class="right money">${currency(perDay)}</td>
+          <td class="right money bad">-${currency(deduction)}</td>
+          <td class="right money">${currency(Math.max(0, salary - deduction))}</td>
+        </tr>`);
+      }
+      summaryTbody.innerHTML = sumRows.join("") || `<tr><td colspan="5" class="muted">No absences to summarize.</td></tr>`;
+
+      // Remaining balance from Sheet2
+      let balanceMsg = "";
+      if (sheet2.length){
+        const balKey = keyFind(sheet2[0], "Balance", "Remaining Balance", "RemainingBalance", "Other misconceptions. balance");
+        const lastPaidKey = keyFind(sheet2[0], "Last Month Paid", "Last Paid");
+        const nextPayKey = keyFind(sheet2[0], "Next Month to be paid", "Next To Pay");
+
+        const bal = balKey ? Number(String(sheet2[0][balKey]).replace(/[^\d.-]/g,'')) : NaN;
+        const lastPaid = lastPaidKey ? Number(String(sheet2[0][lastPaidKey]).replace(/[^\d.-]/g,'')) : NaN;
+        const nextToPay = nextPayKey ? Number(String(sheet2[0][nextPayKey]).replace(/[^\d.-]/g,'')) : NaN;
+
+        if (!isNaN(bal)){
+          const after = bal - totalDeduction;
+          balanceMsg = `Balance (Sheet2): ${currency(bal)}. Total deductions: ${currency(totalDeduction)}. After deductions: ${currency(after)}.`;
+          if (!isNaN(lastPaid)) balanceMsg += ` Last month paid: ${currency(lastPaid)}.`;
+          if (!isNaN(nextToPay)) balanceMsg += ` Next month to be paid: ${currency(nextToPay)}.`;
+        } else {
+          balanceMsg = "Sheet2 loaded but no recognizable Balance field found.";
+        }
+      } else {
+        balanceMsg = "Sheet2 appears empty. Skipping remaining balance.";
+      }
+      balanceStatus.textContent = balanceMsg;
+
+      totalsBox.innerHTML = `
+        <span class="pill">Total absences: ${totalAbsences}</span>
+        <span class="pill bad">Total deduction: -${currency(totalDeduction)}</span>
+        <span class="pill">Monthly salary: ${currency(salary)}</span>
+        <span class="pill">Rate basis: ${$("#rateBasis").selectedOptions[0].textContent}</span>
+      `;
+
+      setStatus(`Loaded ${records.length} absence date(s) across ${byMonth.size} month(s).`);
+    } catch (err){
+      console.error(err);
+      setStatus("Error: " + err.message);
+      datesTbody.innerHTML = ""; summaryTbody.innerHTML = ""; totalsBox.innerHTML = ""; balanceStatus.textContent = "";
+    } finally {
+      loadBtn.disabled = false;
+    }
+  }
+
+  $("#loadBtn").addEventListener("click", loadAll);
+})();
+</script>
+</body>
+</html>
