@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>News Collector (Somik)</title>
+  <style>
+    body{font-family:Arial;max-width:1000px;margin:20px auto;padding:10px}
+    textarea,input,button{width:100%;padding:8px;margin-top:6px;font-size:14px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border:1px solid #ddd;padding:8px;text-align:left}
+    .small{font-size:12px;color:#666}
+  </style>
+</head>
+<body>
+  <h2>News Collector (Vercel)</h2>
+  <label>Companies (comma-separated):
+    <textarea id="companies" rows="2" placeholder="Tesla, Tata Motors"></textarea>
+  </label>
+
+  <label>From: <input id="fromDate" type="date" /></label>
+  <label>To: <input id="toDate" type="date" /></label>
+  <label>Pages per company (max 5): <input id="pages" type="number" value="2" min="1" max="5" /></label>
+
+  <button id="searchBtn">Search News</button>
+  <div id="status" class="small"></div>
+  <div id="results"></div>
+
+<script>
+const API_URL = 'API_URL_HERE'; // set this to https://<your-vercel-domain>/api/news
+
+document.getElementById('searchBtn').addEventListener('click', async () => {
+  const companiesText = document.getElementById('companies').value.trim();
+  if (!companiesText) return alert('Enter company names');
+  const payload = {
+    companies: companiesText.split(',').map(s=>s.trim()).filter(Boolean),
+    from: document.getElementById('fromDate').value || null,
+    to: document.getElementById('toDate').value || null,
+    pagesPerCompany: parseInt(document.getElementById('pages').value||2,10)
+  };
+  document.getElementById('status').textContent = 'Searching...';
+  document.getElementById('results').innerHTML = '';
+  try {
+    const r = await fetch(API_URL, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      throw new Error('Server returned ' + r.status + ' - ' + txt);
+    }
+    const articles = await r.json();
+    showResults(Array.isArray(articles) ? articles : []);
+    document.getElementById('status').textContent = 'Found ' + (Array.isArray(articles) ? articles.length : 0) + ' deduped articles';
+  } catch (e) {
+    document.getElementById('status').textContent = 'Error: ' + e.message;
+  }
+});
+
+function showResults(articles) {
+  if (!articles || articles.length === 0) { document.getElementById('results').innerHTML = '<p>No articles</p>'; return; }
+  let html = '<div style="margin-bottom:8px"><button id="selectAll">Select all</button> <button id="deselectAll">Deselect all</button> <button id="downloadSelected">Download CSV</button></div>';
+  html += '<table><thead><tr><th></th><th>Title</th><th>Source</th><th>Published</th><th>Companies</th></tr></thead><tbody>';
+  articles.forEach((a,i) => {
+    html += `<tr><td><input type="checkbox" class="cb" data-i="${i}" checked></td><td>${escapeHtml(a.title||'')}<div class="small"><a href="${escapeHtml(a.url||'')}" target="_blank">open</a></div></td><td>${escapeHtml(a.source||'')}</td><td>${escapeHtml(a.publishedAt||'')}</td><td>${escapeHtml(a.companyQueried||'')}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('results').innerHTML = html;
+  document.getElementById('selectAll').onclick = ()=>document.querySelectorAll('.cb').forEach(c=>c.checked=true);
+  document.getElementById('deselectAll').onclick = ()=>document.querySelectorAll('.cb').forEach(c=>c.checked=false);
+  document.getElementById('downloadSelected').onclick = ()=> {
+    const sel = []; document.querySelectorAll('.cb').forEach(c => { if(c.checked) sel.push(articles[parseInt(c.dataset.i,10)]) });
+    if (!sel.length) return alert('No selection');
+    downloadCSV(sel);
+  };
+}
+
+function downloadCSV(items) {
+  const header = ['title','url','source','publishedAt','description','companyQueried'];
+  const rows = [header.join(',')];
+  for (const a of items) rows.push(header.map(h=>`"${(a[h]||'').replace(/"/g,'""')}"`).join(','));
+  const blob = new Blob([rows.join('\\n')], {type:'text/csv'}); const u = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=u; a.download='articles.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
+}
+
+function escapeHtml(s){ if(!s) return ''; return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+</script>
+</body>
+</html>
