@@ -1,11 +1,11 @@
-// api/news.js — Fixed for NewsData.io (archive/latest + nextPage)
-// Keep your ENV var: NEWS_API_KEY
+// api/news.js — strict & fixed for NewsData.io
+// Requires: process.env.NEWS_API_KEY
 
 function normalize(s) {
   return (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 }
 
-function jsonResponse(res, obj, status = 200) {
+function send(res, status, obj) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -13,30 +13,45 @@ function jsonResponse(res, obj, status = 200) {
   res.status(status).send(JSON.stringify(obj));
 }
 
+function isYYYYMMDD(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); }
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'POST') return jsonResponse(res, { error: 'Only POST allowed' }, 405);
+  if (req.method !== 'POST') return send(res, 405, { error: 'Only POST allowed' });
 
   const NEWS_KEY = process.env.NEWS_API_KEY;
-  if (!NEWS_KEY) return jsonResponse(res, { error: 'Server missing NEWS_API_KEY' }, 500);
+  if (!NEWS_KEY) return send(res, 500, { error: 'Server missing NEWS_API_KEY' });
 
   let body = req.body;
   if (!body || typeof body !== 'object') {
-    try { body = JSON.parse(req.body || '{}'); } catch { return jsonResponse(res, { error: 'Invalid JSON body' }, 400); }
+    try { body = JSON.parse(req.body || '{}'); }
+    catch { return send(res, 400, { error: 'Invalid JSON body' }); }
   }
 
-  // inputs
+  // 1) Inputs
   let companies = Array.isArray(body.companies) ? body.companies : (body.companies || '');
   if (typeof companies === 'string') companies = companies.split(',').map(s => s.trim()).filter(Boolean);
   companies = (companies || []).filter(Boolean);
-  if (!companies.length) return jsonResponse(res, { error: 'No companies provided' }, 400);
+  if (!companies.length) return send(res, 400, { error: 'No companies provided' });
 
-  const from = body.from || null;  // yyyy-mm-dd
-  const to   = body.to   || null;  // yyyy-mm-dd
+  const from = body.from || null;   // yyyy-mm-dd
+  const to   = body.to   || null;   // yyyy-mm-dd
   const pagesPerCompany = Math.max(1, Math.min(6, parseInt(body.pagesPerCompany || 2, 10) || 2));
-  const useArchive = Boolean(from || to);
 
-  const BASE = useArchive ? 'https://newsdata.io/api/1/archive' : 'https://newsdata.io/api/1/latest';
+  // 2) Validate dates and select endpoint
+  let base = 'https://newsdata.io/api/1/latest';
+  let useArchive = false;
+  if (from || to) {
+    if (!(from && to)) {
+      return send(res, 400, { error: 'Both from and to are required together for archive searches (YYYY-MM-DD).' });
+    }
+    if (!isYYYYMMDD(from) || !isYYYYMMDD(to)) {
+      return send(res, 400, { error: 'Dates must be in YYYY-MM-DD format.' });
+    }
+    useArchive = true;
+    base = 'https://newsdata.io/api/1/archive';
+  }
+
   const all = [];
 
   try {
@@ -45,24 +60,27 @@ export default async function handler(req, res) {
       let pages = 0;
 
       while (pages < pagesPerCompany) {
-        const url = new URL(BASE);
+        const url = new URL(base);
         url.searchParams.set('apikey', NEWS_KEY);
         url.searchParams.set('q', company);
-        url.searchParams.set('language', 'en');
+        url.searchParams.set('language', 'en'); // Supported param
 
         if (useArchive) {
-          if (from) url.searchParams.set('from_date', from);
-          if (to)   url.searchParams.set('to_date', to);
+          url.searchParams.set('from_date', from);
+          url.searchParams.set('to_date', to);
         }
-        if (pageToken) url.searchParams.set('page', pageToken);
+        if (pageToken) url.searchParams.set('page', pageToken); // only when token exists
 
-        const r = await fetch(url.toString());
+        const reqUrl = url.toString();
+        const r = await fetch(reqUrl);
         if (!r.ok) {
           const text = await r.text().catch(() => '');
-          throw new Error(`News API error ${r.status}: ${text}`);
+          // Surface the exact request minus your key for easier debugging
+          const safe = reqUrl.replace(/apikey=[^&]+/, 'apikey=***');
+          throw new Error(`News API error ${r.status} for ${safe}: ${text}`);
         }
-        const j = await r.json();
 
+        const j = await r.json();
         const items = j.results || j.articles || [];
         for (const a of (items || [])) {
           const title = a.title || a.title_no_formatting || '';
@@ -79,24 +97,24 @@ export default async function handler(req, res) {
       }
     }
   } catch (err) {
-    return jsonResponse(res, { error: err.message || String(err) }, 502);
+    return send(res, 502, { error: String(err.message || err) });
   }
 
-  // dedupe by URL, then normalized title/desc
+  // 3) Deduplicate
   const byUrl = new Map();
   for (const a of all) {
     if (a.url) {
       if (!byUrl.has(a.url)) byUrl.set(a.url, { ...a });
       else {
         const ex = byUrl.get(a.url);
-        ex.companyQueried = Array.from(new Set((ex.companyQueried + ',' + a.companyQueried).split(',').map(s=>s.trim()).filter(Boolean))).join(',');
+        ex.companyQueried = Array.from(new Set((ex.companyQueried + ',' + a.companyQueried).split(',').map(s => s.trim()).filter(Boolean))).join(',');
       }
     } else {
       const key = 'no-url|' + normalize(a.title || a.description || '');
       if (!byUrl.has(key)) byUrl.set(key, { ...a });
       else {
         const ex = byUrl.get(key);
-        ex.companyQueried = Array.from(new Set((ex.companyQueried + ',' + a.companyQueried).split(',').map(s=>s.trim()).filter(Boolean))).join(',');
+        ex.companyQueried = Array.from(new Set((ex.companyQueried + ',' + a.companyQueried).split(',').map(s => s.trim()).filter(Boolean))).join(',');
       }
     }
   }
@@ -110,10 +128,9 @@ export default async function handler(req, res) {
     if (!seen.has(n)) { seen.set(n, a); final.push(a); }
     else {
       const ex = seen.get(n);
-      ex.companyQueried = Array.from(new Set((ex.companyQueried + ',' + a.companyQueried).split(',').map(s=>s.trim()).filter(Boolean))).join(',');
+      ex.companyQueried = Array.from(new Set((ex.companyQueried + ',' + a.companyQueried).split(',').map(s => s.trim()).filter(Boolean))).join(',');
     }
   }
-
-  final.sort((x,y) => (Date.parse(y.publishedAt || '') || 0) - (Date.parse(x.publishedAt || '') || 0));
-  return jsonResponse(res, final, 200);
+  final.sort((x, y) => (Date.parse(y.publishedAt || '') || 0) - (Date.parse(x.publishedAt || '') || 0));
+  return send(res, 200, final);
 }
