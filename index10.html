@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mumbai Clinical Research Salary Snapshot – Interactive</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#121935; --ink:#e9eefc; --muted:#a9b5d9;
+    --accent:#6aa3ff; --accent2:#79f0c4; --danger:#ff7a7a; --ok:#78d18b;
+    --ring:rgba(106,163,255,.35); --card:#0f1530; --chip:#1a2247;
+    --radius:16px; --shadow:0 16px 40px rgba(0,0,0,.35); --border:rgba(255,255,255,.08);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background: radial-gradient(1200px 600px at 20% -10%, #19224b 0%, #0b1020 55%) fixed, var(--bg);
+    color:var(--ink); font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;
+  }
+  .wrap{max-width:1080px; margin:32px auto; padding:0 16px}
+  .header{
+    display:grid; gap:8px; margin-bottom:18px;
+  }
+  h1{font-size:clamp(24px,3.2vw,34px); margin:8px 0 4px}
+  .tag{display:inline-flex; gap:8px; align-items:center; background:linear-gradient(180deg,#18245a,#11183a);
+    border:1px solid var(--border); padding:8px 12px; border-radius:999px; color:var(--muted)}
+  .grid{display:grid; gap:16px}
+  @media(min-width:900px){ .grid{grid-template-columns:1.2fr .8fr} }
+  .card{
+    background:linear-gradient(180deg, #11173a, #0d1332);
+    border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px;
+  }
+  .card h2{font-size:18px; margin:4px 0 12px}
+  .panel{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px}
+  .row{display:grid; gap:12px; margin:10px 0}
+  @media(min-width:680px){ .row-2{grid-template-columns:1fr 1fr} .row-3{grid-template-columns:1fr 1fr 1fr} }
+  label{font-size:13px; color:var(--muted)}
+  select, input[type="number"]{
+    width:100%; background:#0b1330; color:var(--ink); border:1px solid var(--border); border-radius:10px; padding:10px 12px;
+    outline:none; box-shadow:inset 0 0 0 1px transparent; transition:.2s;
+  }
+  select:focus, input:focus{box-shadow:0 0 0 6px var(--ring)}
+  input[type="range"]{width:100%}
+  .pill{
+    display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px;
+    background:var(--chip); border:1px solid var(--border); color:var(--muted); font-size:13px;
+  }
+  .kpi{
+    display:grid; gap:12px; grid-template-columns:repeat(2,1fr);
+  }
+  @media(min-width:680px){ .kpi{grid-template-columns:repeat(4,1fr)} }
+  .kpi .box{
+    background:linear-gradient(180deg,#101840,#0e1636); border:1px solid var(--border); border-radius:14px; padding:14px;
+  }
+  .kpi .val{font-size:20px; font-weight:700}
+  .muted{color:var(--muted)}
+  .verdict{
+    background:linear-gradient(180deg,#0f2a54,#0a1833);
+    border:1px solid rgba(122,173,255,.25);
+    border-radius:18px; padding:16px; box-shadow:0 10px 30px rgba(60,110,255,.25);
+  }
+  .verdict h3{margin:0 0 6px}
+  .badge{padding:4px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border); background:#122055; color:#cfe0ff}
+  .list{display:grid; gap:8px}
+  .src a{color:#cfe0ff; text-decoration:underline}
+  .src .conf{font-size:12px; opacity:.8}
+  .note{font-size:13px; color:var(--muted)}
+  .hr{height:1px; background:var(--border); margin:14px 0}
+  .btn{
+    background:linear-gradient(180deg,#6aa3ff,#5a8cf0); border:none; color:#0a1230; font-weight:700; padding:10px 14px;
+    border-radius:12px; cursor:pointer; box-shadow:0 8px 20px rgba(90,140,240,.35); transition:.2s;
+  }
+  .btn:active{transform:translateY(1px)}
+  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+  .tiny{font-size:12px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="tag">Mumbai • Clinical Research • Salary & Take-Home Estimator</div>
+      <h1>Chaity Roy – Market-aligned Salary View (Mumbai)</h1>
+      <div class="verdict">
+        <h3>Final conclusive verdict</h3>
+        <div class="muted">For an early-career clinical research professional in Mumbai with BSc+MSc (Zoology) and a PG Diploma in Clinical Research, typical net take-home is
+          <span class="pill"><strong>₹32,000–₹45,000 per month</strong></span>, with an overall sensible envelope of
+          <span class="pill">₹25,000–₹55,000 per month</span>, depending on role (CRA/CRC/PV), employer tier, and deductions.
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- LEFT: INTERACTIVE -->
+      <section class="card">
+        <h2>Interactive estimator</h2>
+        <div class="panel">
+          <div class="row row-3">
+            <div>
+              <label for="role">Role</label>
+              <select id="role">
+                <option value="CRA" selected>Clinical Research Associate (CRA)</option>
+                <option value="PV">Pharmacovigilance Associate (PV)</option>
+                <option value="CRC">Clinical Research Coordinator (CRC)</option>
+              </select>
+            </div>
+            <div>
+              <label for="xp">Experience band</label>
+              <select id="xp">
+                <option value="0-2" selected>0–2 years</option>
+                <option value="2-4">2–4 years</option>
+                <option value="4-6">4–6 years</option>
+              </select>
+            </div>
+            <div>
+              <label for="tier">Employer tier</label>
+              <select id="tier">
+                <option value="mnc" selected>MNC / top-tier CRO</option>
+                <option value="other">Mid / other CRO</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row row-2" style="margin-top:8px">
+            <div>
+              <label for="ded">Deduction rate (PF+tax+misc)</label>
+              <input id="ded" type="range" min="8" max="22" step="1" value="14" />
+              <div class="muted tiny">Current: <span id="dedv" class="mono">14%</span></div>
+            </div>
+            <div>
+              <label for="hra">Mumbai HRA weighting</label>
+              <input id="hra" type="range" min="-5" max="5" step="1" value="1" />
+              <div class="muted tiny">Effect on gross band: <span id="hrav" class="mono">+1%</span></div>
+            </div>
+          </div>
+
+          <div class="hr"></div>
+
+          <div class="kpi">
+            <div class="box">
+              <div class="muted tiny">Gross band (annual)</div>
+              <div id="grossBand" class="val mono">₹3.3L – ₹5.8L</div>
+            </div>
+            <div class="box">
+              <div class="muted tiny">Gross band (monthly)</div>
+              <div id="grossBandM" class="val mono">₹27,500 – ₹48,300</div>
+            </div>
+            <div class="box">
+              <div class="muted tiny">Est. net take-home (monthly)</div>
+              <div id="netBandM" class="val mono">₹23,600 – ₹41,500</div>
+            </div>
+            <div class="box">
+              <div class="muted tiny">Assumption snapshot</div>
+              <div id="assump" class="mono tiny">Deduction 14%, MNC tier, 0–2y</div>
+            </div>
+          </div>
+
+          <div class="hr"></div>
+          <button id="reset" class="btn">Reset to recommended</button>
+        </div>
+      </section>
+
+      <!-- RIGHT: SOURCES + CONTEXT -->
+      <aside class="card">
+        <h2>Market sources & confidence</h2>
+        <div class="list src">
+          <div class="panel">
+            <div><strong>CRA – Mumbai average</strong></div>
+            <div class="conf">Confidence: <span class="badge">Medium–High</span></div>
+            <a href="https://in.indeed.com/career/clinical-research-associate/salaries/Mumbai--Maharashtra" target="_blank" rel="noopener">Indeed – CRA salaries (Mumbai)</a>
+          </div>
+          <div class="panel">
+            <div><strong>CRA – Mumbai span & median</strong></div>
+            <div class="conf">Confidence: <span class="badge">Medium–High</span></div>
+            <a href="https://www.glassdoor.co.in/Salaries/mumbai-clinical-research-associate-salary-SRCH_IL.0,6_IM1070_KO7,34.htm" target="_blank" rel="noopener">Glassdoor – CRA (Mumbai)</a>
+          </div>
+          <div class="panel">
+            <div><strong>PV Associate – Mumbai band</strong></div>
+            <div class="conf">Confidence: <span class="badge">Medium–High</span></div>
+            <a href="https://www.glassdoor.co.in/Salaries/mumbai-pharmacovigilance-salary-SRCH_IL.0,6_IM1070_KO7,24.htm" target="_blank" rel="noopener">Glassdoor – Pharmacovigilance (Mumbai)</a>
+          </div>
+          <div class="panel">
+            <div><strong>CRC – India baseline (Mumbai subset)</strong></div>
+            <div class="conf">Confidence: <span class="badge">Medium</span></div>
+            <a href="https://in.indeed.com/career/clinical-research-coordinator/salaries" target="_blank" rel="noopener">Indeed – CRC (India)</a>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+        <div class="note">
+          Notes: Net take-home depends on actual CTC structure, basic/HRA split, chosen tax regime, and employer benefits.
+          Ranges reflect recent Mumbai market data points plus conservative assumptions.
+        </div>
+      </aside>
+    </div>
+
+    <!-- FOOTER SUMMARY -->
+    <section class="card" style="margin-top:16px">
+      <h2>Profile context (for matches)</h2>
+      <div class="panel">
+        <div class="row row-2">
+          <div>
+            <div class="pill">Education: BSc+MSc (Zoology) • PG Diploma (Clinical Research, Mumbai)</div>
+          </div>
+          <div>
+            <div class="pill">Current: Mumbai • MNC (Clinical Research)</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="pill">Lifestyle: Non-smoker, non-drinker • Interests: Books, museums, travel, pets, art</div>
+        </div>
+        <div class="note">This section helps viewers understand role seniority and city cost-of-living context that influence offers.</div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <h2>Assumptions used by the estimator</h2>
+      <div class="panel">
+        <ul class="tiny">
+          <li>Base gross bands by role (Mumbai): CRA ₹3.3L–₹5.8L; PV ₹2.6L–₹5.1L; CRC ~₹2.3L–₹3.0L (annual).</li>
+          <li>Experience adjustments: 2–4y lifts band by ~12%; 4–6y by ~22% vs 0–2y baseline.</li>
+          <li>MNC/top-tier adds ~6% uplift vs mid/other CRO.</li>
+          <li>“HRA weighting” slider mildly nudges the gross range to reflect city-specific structuring.</li>
+          <li>Monthly net = monthly gross × (1 − selected deduction rate%). This is a simplification for transparency.</li>
+        </ul>
+      </div>
+    </section>
+
+    <div class="tiny muted" style="text-align:center; margin:18px 0 8px">© Salary snapshot for personal use • Last updated: <span id="today"></span></div>
+  </div>
+
+<script>
+  // ----- DATA -----
+  const bands = {
+    CRA: { lo: 3.3, hi: 5.8 },      // lakhs per annum
+    PV:  { lo: 2.6, hi: 5.1 },
+    CRC: { lo: 2.3, hi: 3.0 }
+  };
+  const xpAdj = { "0-2": 0, "2-4": 0.12, "4-6": 0.22 };
+  const tierAdj = { mnc: 0.06, other: 0 };
+
+  // ----- ELEMENTS -----
+  const roleEl = document.getElementById('role');
+  const xpEl = document.getElementById('xp');
+  const tierEl = document.getElementById('tier');
+  const dedEl = document.getElementById('ded');
+  const hraEl = document.getElementById('hra');
+
+  const dedv = document.getElementById('dedv');
+  const hrav = document.getElementById('hrav');
+
+  const grossBand = document.getElementById('grossBand');
+  const grossBandM = document.getElementById('grossBandM');
+  const netBandM = document.getElementById('netBandM');
+  const assump = document.getElementById('assump');
+  const resetBtn = document.getElementById('reset');
+
+  // ----- HELPERS -----
+  const fmtLpa = v => `₹${v.toFixed(1)}L`;
+  const fmtMoney = v => {
+    // Indian-style formatting
+    const parts = Math.round(v).toString().split('');
+    let out = '', count = 0;
+    for (let i = parts.length - 1; i >= 0; i--) {
+      out = parts[i] + out;
+      count++;
+      if (i > 0) {
+        if (count === 3) { out = ',' + out; }
+        else if (count > 3 && (count - 1) % 2 === 0) { out = ',' + out; }
+      }
+    }
+    return `₹${out}`;
+  };
+
+  function compute() {
+    const role = roleEl.value;
+    const xp = xpEl.value;
+    const tier = tierEl.value;
+    const ded = Number(dedEl.value) / 100;
+    const hra = Number(hraEl.value) / 100;
+
+    dedv.textContent = `${Math.round(ded*100)}%`;
+    hrav.textContent = `${hra>=0?'+':''}${Math.round(hra*100)}%`;
+
+    // Base band
+    let lo = bands[role].lo;
+    let hi = bands[role].hi;
+
+    // Adjustments
+    const adj = (1 + xpAdj[xp]) * (1 + tierAdj[tier]) * (1 + hra);
+    lo *= adj; hi *= adj;
+
+    // Monthly gross
+    const mlo = (lo * 100000) / 12;
+    const mhi = (hi * 100000) / 12;
+
+    // Net monthly
+    const nlo = mlo * (1 - ded);
+    const nhi = mhi * (1 - ded);
+
+    // Render
+    grossBand.textContent = `${fmtLpa(lo)} – ${fmtLpa(hi)}`;
+    grossBandM.textContent = `${fmtMoney(mlo)} – ${fmtMoney(mhi)}`;
+    netBandM.textContent = `${fmtMoney(nlo)} – ${fmtMoney(nhi)}`;
+    assump.textContent = `Deduction ${Math.round(ded*100)}%, ${tier==='mnc'?'MNC tier':'Other tier'}, ${xp}y`;
+  }
+
+  [roleEl, xpEl, tierEl, dedEl, hraEl].forEach(el => el.addEventListener('input', compute));
+  resetBtn.addEventListener('click', () => {
+    roleEl.value = 'CRA';
+    xpEl.value = '0-2';
+    tierEl.value = 'mnc';
+    dedEl.value = 14;
+    hraEl.value = 1;
+    compute();
+  });
+
+  // Init
+  document.getElementById('today').textContent = new Date().toLocaleDateString('en-IN', {year:'numeric', month:'short', day:'2-digit'});
+  compute();
+</script>
+</body>
+</html>
